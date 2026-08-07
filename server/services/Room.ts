@@ -100,7 +100,9 @@ export class Room {
     let assignedRole: Role = requestedRole || 'Participant';
     const hasHost = Array.from(this.participants.values()).some((p) => p.role === 'Host');
 
-    if (userId === this.hostUserId || this.participants.size === 0 || !hasHost) {
+    const isHostUser = Boolean(userId && this.hostUserId && userId.trim().toLowerCase() === this.hostUserId.trim().toLowerCase());
+
+    if (isHostUser || this.participants.size === 0 || !hasHost) {
       assignedRole = 'Host';
       this.hostUserId = userId;
     }

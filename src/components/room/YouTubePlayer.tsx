@@ -115,7 +115,15 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             return;
           }
 
-          if (!canControl) return;
+          if (!canControl) {
+            // Participant tried to play, pause or scrub via YouTube iframe controls
+            // Instantly force resync back to official server playback state
+            const player = event.target;
+            if (player) {
+              syncPlayerWithState(player);
+            }
+            return;
+          }
 
           const player = event.target;
           if (!player || typeof player.getCurrentTime !== 'function') return;
@@ -206,6 +214,22 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
     return () => clearInterval(interval);
   }, [canControl, isApiReady, playback.currentTime, playback.playState, playback.lastStateUpdate, onSeek]);
+
+  // Continuous lock enforcement for Participants (disallows local pause/seek/play deviations)
+  useEffect(() => {
+    if (canControl || !isApiReady) return;
+
+    const interval = setInterval(() => {
+      const player = playerRef.current;
+      if (!player || typeof player.getPlayerState !== 'function') return;
+
+      if (!isInternalStateChangeRef.current) {
+        syncPlayerWithState(player);
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [canControl, isApiReady, playback.playState, playback.currentTime, playback.lastStateUpdate]);
 
   // Sync player whenever server playback state changes
   useEffect(() => {

@@ -6,4 +6,5 @@
   "minorCapabilities": ["notifications", "analytics", "customization"],
   "version": "1.0.0",
   "author": "Pulkit Chopra",
+  "note": "Made with ❤️ by Pulkit Chopra. This application is designed for real-time synchronized YouTube watch parties, allowing users to create and join rooms, chat, and manage playback collectively."
 }

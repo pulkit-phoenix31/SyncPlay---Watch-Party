@@ -41,8 +41,8 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
 
   // Helper to ensure user session is initialized in localStorage
   const getOrCreateSession = useCallback(() => {
-    const targetCode = initialRoomCode || roomCode;
-    let existingSession: UserSession | null = null;
+    const targetCode = (initialRoomCode || roomCode || '').toUpperCase();
+    let existingSession: any = null;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -53,13 +53,17 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     }
 
     if (targetCode) {
+      const isSameRoom = existingSession?.roomCode?.toUpperCase() === targetCode || existingSession?.roomId?.toUpperCase() === targetCode;
       const userId = existingSession?.userId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const username = initialUsername?.trim() || existingSession?.username || `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
-      const session: UserSession = {
+      const role: Role = isSameRoom ? (existingSession?.role || 'Participant') : (existingSession?.role || 'Participant');
+
+      const session = {
         userId,
         username,
         roomId: targetCode,
         roomCode: targetCode,
+        role,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
       return session;
@@ -107,6 +111,24 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // Sync currentUser changes (e.g. role) to localStorage
+  useEffect(() => {
+    if (currentUser) {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          parsed.role = currentUser.role;
+          parsed.userId = currentUser.userId;
+          parsed.username = currentUser.username;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [currentUser]);
 
   // Update current user's role whenever participants list changes
   useEffect(() => {
