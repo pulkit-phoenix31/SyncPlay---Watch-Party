@@ -46,7 +46,10 @@ export class RoomManager {
     initialVideoId?: string,
     requestedCodeOrId?: string
   ): Promise<Room> {
-    if (!this.io) throw new Error('Socket server not initialized in RoomManager');
+    const ioServer = this.io || ({
+      to: () => ({ emit: () => {} }),
+      emit: () => {},
+    } as any);
 
     let code = requestedCodeOrId ? requestedCodeOrId.trim().toUpperCase() : this.generateRoomCode();
     if (!requestedCodeOrId) {
@@ -75,7 +78,7 @@ export class RoomManager {
     }
 
     const room = new Room(
-      this.io,
+      ioServer,
       roomId,
       code,
       hostUserId,
@@ -127,7 +130,10 @@ export class RoomManager {
     const memoryRoom = this.getRoom(roomIdOrCode);
     if (memoryRoom) return memoryRoom;
 
-    if (!this.io) return undefined;
+    const ioServer = this.io || ({
+      to: () => ({ emit: () => {} }),
+      emit: () => {},
+    } as any);
 
     try {
       const cleanInput = roomIdOrCode.trim();
