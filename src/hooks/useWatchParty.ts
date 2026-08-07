@@ -91,11 +91,15 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
   });
 
   const [participants, setParticipants] = useState<ParticipantData[]>([]);
-  const [playback, setPlayback] = useState<PlaybackState>({
-    videoId: 'L_LUpnjgPso',
-    playState: 'paused',
-    currentTime: 0,
-    lastStateUpdate: Date.now(),
+  const [playback, setPlayback] = useState<PlaybackState>(() => {
+    const session = getOrCreateSession();
+    const vid = session && (session as any).videoId ? extractYouTubeId((session as any).videoId) : 'L_LUpnjgPso';
+    return {
+      videoId: vid,
+      playState: 'paused',
+      currentTime: 0,
+      lastStateUpdate: Date.now(),
+    };
   });
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [reactions, setReactions] = useState<EmojiReactionData[]>([]);

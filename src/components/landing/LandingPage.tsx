@@ -167,6 +167,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
         roomId: roomCode,
         roomCode: roomCode,
         role: 'Host',
+        videoId: targetVideoId,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 
@@ -195,9 +196,28 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
     setErrorMsg(null);
 
     try {
-      let cleanCode = joinCode.trim().toUpperCase();
-      if (cleanCode.includes('ROOM=')) {
-        cleanCode = cleanCode.split('ROOM=')[1].split('&')[0];
+      let rawInput = joinCode.trim();
+      let cleanCode = rawInput.toUpperCase();
+
+      if (rawInput.includes('room=')) {
+        cleanCode = rawInput.split('room=')[1].split('&')[0].toUpperCase();
+      } else if (rawInput.includes('ROOM=')) {
+        cleanCode = rawInput.split('ROOM=')[1].split('&')[0].toUpperCase();
+      } else if (rawInput.startsWith('http://') || rawInput.startsWith('https://')) {
+        try {
+          const parsedUrl = new URL(rawInput);
+          const roomParam = parsedUrl.searchParams.get('room');
+          if (roomParam) {
+            cleanCode = roomParam.trim().toUpperCase();
+          } else {
+            const segments = parsedUrl.pathname.split('/').filter(Boolean);
+            if (segments.length > 0) {
+              cleanCode = segments[segments.length - 1].trim().toUpperCase();
+            }
+          }
+        } catch (e) {
+          // fallback to cleanCode
+        }
       }
 
       try {
