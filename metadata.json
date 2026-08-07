@@ -1,0 +1,6 @@
+{
+  "name": "YouTube Watch Party",
+  "description": "Real-time synchronized YouTube watch party application with role-based permissions, room state management, and interactive chat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,48 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Room {
+  id              String        @id @default(uuid())
+  code            String        @unique
+  hostUserId      String
+  videoId         String        @default("L_LUpnjgPso")
+  playState       String        @default("paused")
+  currentTime     Float         @default(0)
+  lastStateUpdate DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  isClosed        Boolean       @default(false)
+  participants    Participant[]
+  messages        ChatMessage[]
+}
+
+model Participant {
+  id         String   @id @default(uuid())
+  roomId     String
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  username   String
+  role       String   @default("Participant") // Host, Moderator, Participant
+  socketId   String?
+  isOnline   Boolean  @default(true)
+  joinedAt   DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@unique([roomId, username])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId    String
+  username  String
+  userRole  String
+  message   String
+  timestamp DateTime @default(now())
+}
