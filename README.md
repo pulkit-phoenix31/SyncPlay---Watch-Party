@@ -1,175 +1,332 @@
-<<<<<<< HEAD
-# SyncTheater — Real-Time Synchronized YouTube Watch Party
+<div align="center">
 
-SyncTheater is a high-performance, production-grade YouTube Watch Party platform built with **React**, **TypeScript**, **Node.js / Express**, **Socket.IO**, and **SQLite via Prisma**. It enables synchronized video viewing, role-based access control, live chat, and emoji reactions.
+<img src=".github/assets/desktop.png" alt="SyncPlay — Desktop Room View" width="100%">
 
----
+# 🎬 SyncPlay — YouTube Watch Party
 
-## 🎨 Visual Identity & Design System
+**Watch YouTube videos in perfect sync with friends. Real-time, role-based, and beautifully designed.**
 
-> **Design Choice Justification:**
-> SyncTheater commits to a **"Midnight Theater"** visual identity (deep charcoal `#0B0E14` backdrop, elevated surfaces `#121721`, warm amber accents `#F59E0B`, and crimson/emerald role badges). This dark cinematic palette mimics a real dark-room theater atmosphere, minimizing eye strain during video playback while maintaining high-contrast visual hierarchy for live chat and host controls.
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://sync-play-watch-party.onrender.com)
+[![GitHub](https://img.shields.io/badge/GitHub-Source%20Code-181717?style=for-the-badge&logo=github)](https://github.com/pulkit-phoenix31/SyncPlay---Watch-Party)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO-4.x-010101?style=for-the-badge&logo=socket.io)](https://socket.io)
 
----
-
-## 🚀 Core Features & Event Contract Compliance
-
-- **Room Management**: Instant room creation with 1-click shareable codes (`SYNC-XXXX`) and direct URLs (`/?room=CODE`).
-- **Role-Based Access Control (RBAC)**:
-  - 👑 **Host**: Full control — play/pause, seek, change video, assign roles (Moderator/Participant), remove participants, transfer host privileges.
-  - 🛡️ **Moderator**: Playback control — play/pause, seek, change video.
-  - 👤 **Participant**: Watch-only mode with synchronized playback.
-- **Drift Correction & Synchronization**:
-  - Immediate landing at correct time on join.
-  - Periodic drift correction (tolerance: 1.2 seconds) to keep all clients perfectly synchronized without audio stutter.
-  - Echo-loop prevention: user actions are validated and broadcast without cyclic re-triggering.
-- **Host Disconnect Auto-Promotion**:
-  - If a Host disconnects, a 5-second grace period begins. If the Host does not reconnect, the longest-tenured Moderator (or next Participant) is automatically promoted to Host.
-- **Persistence**:
-  - Room state, participant sessions, and chat history persist in SQLite via Prisma. State survives server restarts.
-- **Live Chat & Emoji Reactions**:
-  - Real-time room chat with user role tags.
-  - Rate limiting (max 5 messages per 5s) to prevent spam.
-  - Floating emoji reaction overlay over video canvas.
+</div>
 
 ---
 
-## 🛠️ Tech Stack & Architecture
+## 📸 Screenshots
 
-- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS v4, Lucide Icons, YouTube IFrame Player API.
-- **Backend**: Node.js, Express, Socket.IO v4, Zod schema validation, Prisma ORM, SQLite (`dev.db`).
-- **Architecture Pattern**: Object-Oriented Design (OOP) with encapsulated `Room`, `Participant`, `RoomManager`, and `PermissionService` classes.
+<table>
+  <tr>
+    <td align="center" width="65%">
+      <img src=".github/assets/desktop.png" alt="Desktop Room View" /><br/>
+      <sub><b>🖥️ Desktop — Theater View with Sidebars</b></sub>
+    </td>
+    <td align="center" width="35%">
+      <img src=".github/assets/mobile.png" alt="Mobile View" /><br/>
+      <sub><b>📱 Mobile — Bottom Nav with Slide Drawers</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src=".github/assets/landing.png" alt="Landing Page" width="80%"/><br/>
+      <sub><b>🏠 Landing Page — Create or Join a Room</b></sub>
+    </td>
+  </tr>
+</table>
 
-### Data Flow Architecture
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| 🔴 **Real-time Sync** | Play, pause, and seek — all clients jump to the exact same timestamp instantly |
+| 👑 **Role-Based Access** | Host · Moderator · Participant — each with enforced server-side permissions |
+| 💬 **Live Chat** | In-room real-time chat with role badges and rate limiting |
+| 🎭 **Emoji Reactions** | Floating animated reactions overlaid on the video canvas |
+| 🔗 **Shareable Rooms** | One-click copy of room code or full join URL |
+| 🔄 **Auto Host Promotion** | If Host disconnects, longest-tenured Moderator is promoted automatically |
+| 💾 **Persistent State** | Room state, chat history, and participants survive server restarts |
+| 📱 **Fully Responsive** | Desktop sidebars on large screens; slide-in drawers + bottom nav on mobile |
+
+---
+
+## 🏗️ Architecture Overview
+
+SyncPlay uses a **WebSocket-first** real-time architecture, with REST as a lightweight fallback.
 
 ```
-[ Client A (Host) ]
-       │
-       │  (1) Socket Event e.g. "play"
-       ▼
-[ Socket.IO Server ]
-       │
-       │  (2) Zod Schema Validation
-       ▼
-[ PermissionService ] ──► Validates role (Host/Moderator)
-       │
-       │  (3) Applies action & updates state
-       ▼
-[ Room Class (OOP) ] ──► Calculates current real-time timestamp
-       │
-       ├──────────────────────────┐
-       │ (4) Sync to SQLite DB    │ (5) Socket Broadcast "sync_state"
-       ▼                          ▼
- [ Prisma / SQLite ]     [ All Connected Clients ]
+┌──────────────────────────────────────────────────────────────────┐
+│                        CLIENT  (React + Vite)                    │
+│                                                                  │
+│  YouTubePlayer ◄──── useWatchParty hook ◄──── socket.ts         │
+│  PlaybackControls          │                  (Socket.IO client) │
+│  ChatPanel            REST polling                               │
+│  ParticipantList      (fallback only)                            │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │  WebSocket (Socket.IO)
+                           │  Events: join_room · play · pause · seek
+                           │          chat_message · user_left · sync_state
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     SERVER  (Express + Socket.IO)                │
+│                                                                  │
+│  io.on('connection')                                             │
+│      └─► registerSocketHandlers(io, socket)                      │
+│              │                                                   │
+│              ├─ ZOD schema validation (every event)              │
+│              │                                                   │
+│              ├─ PermissionService.check(role, action)            │
+│              │   Enforces: Host-only, Moderator+Host, etc.       │
+│              │                                                   │
+│              ├─ RoomManager (Singleton)                          │
+│              │   └─► Room (OOP class per room)                   │
+│              │         ├── participants: Map<userId, Participant> │
+│              │         ├── playState / currentTime / videoId     │
+│              │         └── chatMessages[]                        │
+│              │                                                   │
+│              └─ io.to(room.id).emit(event, payload)              │
+│                  Broadcasts to all members in the room           │
+│                                                                  │
+│  REST /api/rooms/:code  ◄─── Fallback polling endpoint          │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │  Prisma ORM
+                           ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   SQLite  (prisma/dev.db)                        │
+│   Room · Participant · ChatMessage                               │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
----
+### WebSocket Event Flow — Step by Step
 
-## 🔐 Role Enforcement & Permissions
+1. **Client A (Host)** emits a Socket.IO event, e.g. `play` `{ roomCode, timestamp }`
+2. **Server** receives it → **Zod** validates the payload shape
+3. **PermissionService** checks the emitting socket's role against the action — unauthorized actions are rejected with an `error` event
+4. **Room** class updates its in-memory state (`playState`, `currentTime`, `lastStateUpdate`)
+5. **Prisma** asynchronously persists the new state to SQLite
+6. **`io.to(room.id).emit('sync_state', ...)`** broadcasts the authoritative playback state to **every other client** in the room
+7. **Client B, C, N** receive `sync_state` → `useWatchParty` hook updates React state → `YouTubePlayer` seeks/plays
 
-Permissions are enforced strictly **server-side** in `/server/services/PermissionService.ts`:
+### Key Design Decisions
 
-- Every incoming Socket event (`play`, `pause`, `seek`, `change_video`, `assign_role`, `remove_participant`, `transfer_host`) passes through Zod validation first.
-- The server identifies the user's role in the active `Room` object.
-- If an unauthorized action is attempted (e.g. a `Participant` emits `seek`), the server logs the violation and emits an `error` event back to the client:
-  ```json
-  { "message": "Unauthorized: Only Host or Moderator can seek", "code": "FORBIDDEN" }
-  ```
-- The client UI disables/hides controls per role and displays a styled toast notification if a rejected action occurs.
-
----
-
-## ⚡ How I'd Scale This (Scaling Architecture)
-
-To scale SyncTheater to **100,000+ concurrent users, 10,000+ rooms, and 50+ users per room**:
-
-1. **Socket.IO Redis Adapter**:
-   - Deploy multiple stateless Node.js / Express Socket.IO server instances behind an AWS ALB or Cloud Run / Render load balancer.
-   - Attach the `@socket.io/redis-adapter` backed by Redis Pub/Sub. When Host A pauses in Server 1, the event publishes to Redis and broadcasts to all clients connected across Server 2, 3, N.
-2. **Sticky Sessions (Session Affinity)**:
-   - Configure the load balancer for sticky sessions via cookies to maintain WebSocket transport stability during handshake upgrades.
-3. **Database Layer**:
-   - Replace SQLite with PostgreSQL (e.g. AWS Aurora / Supabase) with connection pooling (Prisma Accelerate / PgBouncer).
-4. **Edge CDN & Video Streaming**:
-   - Leverage YouTube's CDN for video delivery while serving frontend static assets over Cloudflare CDN.
+- **In-memory first**: All hot-path state (`Room`, `Participant`) lives in a `Map` — no DB round-trips per event.
+- **Singleton RoomManager**: One global instance maps `socketId → { room, userId }` for O(1) lookups on any event.
+- **Drift correction**: Hosts/Moderators run a 5-second interval comparing local time vs. server `currentTime`; if drift > 1.2s, they self-correct silently.
+- **Voluntary leave vs disconnect**: `leave_room` (button click) fully removes the participant. Socket `disconnect` (tab close) also removes immediately and broadcasts the clean member list.
 
 ---
 
-## 🧪 Manual Testing Checklist
+## 🛠️ Tech Stack
 
-Follow this checklist to verify full end-to-end functionality:
+### Frontend
+| Library | Purpose |
+|---|---|
+| React 19 + TypeScript | UI framework |
+| Vite 6 | Dev server & build tool |
+| Tailwind CSS v4 | Utility-first styling |
+| Motion (Framer Motion) | Animations & transitions |
+| Socket.IO Client | Real-time WebSocket transport |
+| YouTube IFrame API | Embedded video player |
+| Lucide React | Icon set |
 
-- [x] **Test 1: Create & Join Room**
-  1. Open Tab 1, create a room with username `Alice`. Confirm `Alice` becomes **Host** and receives room code `SYNC-XXXX`.
-  2. Open Tab 2, enter code `SYNC-XXXX` with username `Bob`. Confirm `Bob` joins as **Participant**.
-  3. Open Tab 3, enter code `SYNC-XXXX` with username `Charlie`. Confirm `Charlie` joins as **Participant**.
-
-- [x] **Test 2: Playback Synchronization & Drift Correction**
-  1. In Tab 1 (`Alice` Host), click **Play Sync**. Confirm Tab 2 and Tab 3 start playing simultaneously.
-  2. In Tab 1, seek to 02:30. Confirm Tab 2 and Tab 3 seek to 02:30.
-  3. Change video URL in Tab 1. Confirm all tabs update to the new video instantly.
-
-- [x] **Test 3: Role Permission Enforcement**
-  1. In Tab 2 (`Bob` Participant), verify playback controls are hidden/locked.
-  2. Verify `Bob` cannot seek or change video.
-
-- [x] **Test 4: Role Assignment & Host Transfer**
-  1. In Tab 1 (`Alice`), promote `Bob` to **Moderator**. Verify Tab 2 UI unlocks Play/Pause/Seek controls.
-  2. In Tab 1, click **Transfer Host** to `Charlie`. Confirm `Charlie` becomes Host and `Alice` becomes Moderator.
-
-- [x] **Test 5: Host Disconnect & Auto-Promotion**
-  1. Close Tab 3 (`Charlie` Host).
-  2. Wait 5 seconds. Confirm `Bob` (Moderator) is automatically promoted to Host, and a notification appears on all screens.
-
-- [x] **Test 6: Chat & Rate Limiting**
-  1. Send chat messages from Tab 1. Confirm instant delivery across all tabs with role badges.
-  2. Send 6 messages rapidly in 3 seconds. Confirm rate-limiting error toast triggers.
+### Backend
+| Library | Purpose |
+|---|---|
+| Node.js + Express | HTTP server |
+| Socket.IO v4 | WebSocket server |
+| Prisma ORM | Database client |
+| SQLite (`dev.db`) | Persistent storage |
+| Zod | Runtime schema validation |
+| tsx | TypeScript execution |
 
 ---
 
-## ⚙️ Local Setup & Deployment Instructions
+## ⚙️ Local Setup
 
 ### Prerequisites
-- Node.js 18+ installed
+- **Node.js 18+**
+- **npm** (or bun)
 
-### Environment Variables (`.env`)
-Create a `.env` file in the root directory:
+### 1. Clone the repository
+```bash
+git clone https://github.com/pulkit-phoenix31/SyncPlay---Watch-Party.git
+cd SyncPlay---Watch-Party
+```
+
+### 2. Install dependencies
+```bash
+npm install
+```
+
+### 3. Set up the database
+```bash
+npx prisma db push
+```
+This creates `prisma/dev.db` with the Room, Participant, and ChatMessage tables.
+
+### 4. (Optional) Environment variables
+Create a `.env` file in the root:
 ```env
 PORT=3000
 NODE_ENV=development
 ```
 
-### Installation & Execution
+### 5. Start the development server
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Push SQLite database schema via Prisma
-npx prisma db push
-
-# 3. Start development server (Express + Socket.IO + Vite)
 npm run dev
 ```
 
-Visit `http://localhost:3000` in your browser.
+Open **http://localhost:3000** — the Express server serves both the API/WebSocket and the Vite dev middleware from a single port.
 
 ---
 
-## 📦 Deployment Guide
+## 📦 Building for Production
 
-### Deployment on Render / Railway
-1. Push repository to GitHub.
-2. Create a **Web Service** on Render / Railway.
-3. Build Command: `npm run build`
-4. Start Command: `npm run start`
-5. Environment Variables: Set `NODE_ENV=production` and `PORT=3000`.
+```bash
+npm run build
+# Outputs:
+#   dist/index.html + assets  (Vite frontend build)
+#   dist/server.cjs           (esbuild Node.js bundle)
+
+npm run start
+# Runs dist/server.cjs with NODE_ENV=production
+```
 
 ---
 
-## 📝 Known Limitations & Trade-offs
+## 🚀 Deployment
 
-1. **Browser Autoplay Restrictions**: Browsers block unmuted video autoplay if the user hasn't interacted with the page first. Users must click anywhere on the page upon entering the room to allow audio playback.
-2. **Single SQLite DB**: For multi-region server clusters, PostgreSQL should replace SQLite.
-=======
-# SyncPlay---Watch-Party
->>>>>>> 984b499a5356e62aca6271b8969104bac1fd1320
+### Render (Recommended — WebSocket support)
+
+> **Why Render?** Vercel's serverless functions don't support persistent WebSocket connections. Use Render, Railway, or Fly.io for Socket.IO apps.
+
+1. Push your repository to GitHub
+2. Go to [render.com](https://render.com) → **New Web Service**
+3. Connect your GitHub repo
+4. Configure:
+   | Setting | Value |
+   |---|---|
+   | Build Command | `npm run build` |
+   | Start Command | `npm run start` |
+   | Environment | `Node` |
+   | Environment Variable | `NODE_ENV=production` |
+5. Click **Deploy**
+
+🔴 **Live Demo**: [https://sync-play-watch-party.onrender.com](https://sync-play-watch-party.onrender.com)
+
+### Railway
+1. Create a new project from your GitHub repo
+2. Set **Build Command**: `npm run build`
+3. Set **Start Command**: `npm run start`
+4. Add `NODE_ENV=production` as an environment variable
+
+> **Note on Vercel**: The included `vercel.json` supports the REST API only. Socket.IO requires a persistent server — deploy the full app on Render/Railway.
+
+---
+
+## 🔐 Role & Permission System
+
+Permissions are enforced **exclusively server-side** — the client UI reflects roles but cannot bypass checks.
+
+| Action | Host | Moderator | Participant |
+|---|:---:|:---:|:---:|
+| Play / Pause | ✅ | ✅ | ❌ |
+| Seek | ✅ | ✅ | ❌ |
+| Change Video | ✅ | ✅ | ❌ |
+| Assign Roles | ✅ | ❌ | ❌ |
+| Remove Participant | ✅ | ❌ | ❌ |
+| Transfer Host | ✅ | ❌ | ❌ |
+| Send Chat | ✅ | ✅ | ✅ |
+| Send Reactions | ✅ | ✅ | ✅ |
+
+Unauthorized events are rejected server-side with:
+```json
+{ "message": "Unauthorized: Only Host or Moderator can seek", "code": "FORBIDDEN" }
+```
+
+---
+
+## 🧪 Testing the App
+
+Open the app in **3 browser tabs** and use these room codes:
+
+- **Tab 1** → Create a room as `Alice` — becomes **Host**
+- **Tab 2** → Join the same code as `Bob` — joins as **Participant**
+- **Tab 3** → Join the same code as `Charlie` — joins as **Participant**
+
+Test scenarios:
+1. **Alice** presses Play → Bob and Charlie start playing simultaneously
+2. **Alice** seeks to 2:30 → all tabs jump to 2:30
+3. **Alice** promotes Bob to **Moderator** → Bob's controls unlock
+4. **Alice** transfers Host to Charlie → Charlie becomes Host
+5. Close **Charlie's** tab → after ~5s, Bob is auto-promoted to Host
+6. Send chat messages, observe live delivery with role badges
+7. Open on a mobile device — use the bottom nav to access Chat and Members
+
+---
+
+## ⚡ Scaling Beyond MVP
+
+To support **100,000+ concurrent users** across **10,000+ rooms**:
+
+1. **Redis Adapter** — Replace in-memory `RoomManager` with `@socket.io/redis-adapter` so multiple Node.js instances share pub/sub
+2. **Horizontal Scaling** — Deploy stateless Node.js pods behind a load balancer (AWS ALB / Cloud Run) with **sticky sessions** for WebSocket stability
+3. **PostgreSQL** — Replace SQLite with PostgreSQL (Supabase / AWS Aurora) + Prisma Accelerate for connection pooling
+4. **CDN** — Serve the Vite static bundle via Cloudflare CDN; YouTube handles video CDN natively
+
+---
+
+## 📝 Known Limitations
+
+| Limitation | Details |
+|---|---|
+| Browser Autoplay | Browsers block unmuted autoplay without user interaction — users must click once after joining |
+| SQLite Single-File DB | Not suitable for multi-region clusters; replace with PostgreSQL for production scale |
+| YouTube-Only | Only YouTube IFrame API is supported; no other video providers |
+
+---
+
+## 📂 Project Structure
+
+```
+SyncPlay/
+├── server/
+│   ├── index.ts              # Express + Socket.IO server entry
+│   ├── api/
+│   │   └── roomRoutes.ts     # REST fallback endpoints
+│   ├── services/
+│   │   ├── Room.ts           # Room OOP class (state, participants, chat)
+│   │   ├── Participant.ts    # Participant model
+│   │   ├── RoomManager.ts    # Singleton — manages all active rooms
+│   │   └── PermissionService.ts  # Role-based action guards
+│   ├── socket/
+│   │   └── handlers.ts       # All Socket.IO event handlers
+│   └── db.ts                 # Prisma client singleton
+├── src/
+│   ├── components/
+│   │   ├── common/           # Navbar, Toast, etc.
+│   │   ├── landing/          # Landing page (create/join room)
+│   │   └── room/             # RoomView, YouTubePlayer, ChatPanel,
+│   │                         # PlaybackControls, ParticipantList
+│   ├── hooks/
+│   │   └── useWatchParty.ts  # Central state hook (socket + REST)
+│   ├── services/
+│   │   └── socket.ts         # Socket.IO client wrapper
+│   └── types/                # Shared TypeScript interfaces
+├── prisma/
+│   └── schema.prisma         # Room · Participant · ChatMessage models
+├── .github/assets/           # README screenshots
+└── vercel.json               # Vercel rewrite rules (REST only)
+```
+
+---
+
+<div align="center">
+
+Made with ❤️ by [pulkit-phoenix31](https://github.com/pulkit-phoenix31)
+
+</div>
