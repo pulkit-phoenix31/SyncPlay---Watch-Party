@@ -244,13 +244,15 @@ export class RoomManager {
     if (!mapping) return null;
 
     const { room, userId } = mapping;
-    const participant = room.handleParticipantDisconnect(userId);
 
-    if (participant) {
-      return { room, participant };
-    }
+    // Get a reference to the participant BEFORE removing them
+    const participant = room.participants.get(userId);
+    if (!participant) return null;
 
-    return null;
+    // Fully remove from room so user_left broadcast reflects a clean list
+    room.removeParticipant(userId);
+
+    return { room, participant };
   }
 
   /**

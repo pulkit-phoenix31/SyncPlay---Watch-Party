@@ -114,7 +114,8 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
 
       const { room, participant } = ctx;
 
-      room.handleParticipantDisconnect(participant.id);
+      // Voluntary leave: fully remove from room so the updated list doesn't include the leaver
+      room.removeParticipant(participant.id);
       roomManager.unregisterSocket(socket.id);
       socket.leave(room.id);
 
