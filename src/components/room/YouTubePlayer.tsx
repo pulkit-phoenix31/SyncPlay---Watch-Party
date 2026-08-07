@@ -36,6 +36,22 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
   const canControl = userRole === 'Host' || userRole === 'Moderator';
 
+  // Live refs to prevent stale closures and unnecessary player destruction
+  const playbackRef = useRef(playback);
+  playbackRef.current = playback;
+
+  const canControlRef = useRef(canControl);
+  canControlRef.current = canControl;
+
+  const onPlayRef = useRef(onPlay);
+  onPlayRef.current = onPlay;
+
+  const onPauseRef = useRef(onPause);
+  onPauseRef.current = onPause;
+
+  const onSeekRef = useRef(onSeek);
+  onSeekRef.current = onSeek;
+
   const loadedVideoIdRef = useRef<string | null>(null);
   const syncTimeoutRef = useRef<any>(null);
 
@@ -76,7 +92,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     }
   }, []);
 
-  // Initialize YT.Player instance (once when API is ready)
+  // Initialize YT.Player instance (ONCE when API is ready)
   useEffect(() => {
     if (!isApiReady || !containerRef.current || playerRef.current) return;
 
@@ -87,7 +103,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     containerRef.current.appendChild(playerTarget);
 
     setPlayerError(null);
-    const cleanVideoId = extractYouTubeId(playback.videoId);
+    const cleanVideoId = extractYouTubeId(playbackRef.current.videoId);
     loadedVideoIdRef.current = cleanVideoId;
 
     playerRef.current = new window.YT.Player(targetId, {
@@ -95,7 +111,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       height: '100%',
       videoId: cleanVideoId,
       playerVars: {
-        autoplay: playback.playState === 'playing' ? 1 : 0,
+        autoplay: playbackRef.current.playState === 'playing' ? 1 : 0,
         controls: 1,
         playsinline: 1,
         rel: 0,
@@ -111,15 +127,15 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           // Prevent echo loop when update was triggered programmatically from server
           if (isInternalStateChangeRef.current) {
             if (
-              (event.data === 1 && playback.playState === 'playing') ||
-              (event.data === 2 && playback.playState === 'paused')
+              (event.data === 1 && playbackRef.current.playState === 'playing') ||
+              (event.data === 2 && playbackRef.current.playState === 'paused')
             ) {
               isInternalStateChangeRef.current = false;
             }
             return;
           }
 
-          if (!canControl) {
+          if (!canControlRef.current) {
             // Participant tried to play, pause or scrub via YouTube iframe controls
             const player = event.target;
             if (player) {
@@ -133,9 +149,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
           try {
             const playerTime = player.getCurrentTime() || 0;
-            let expectedTime = playback.currentTime;
-            if (playback.playState === 'playing') {
-              const elapsed = (Date.now() - playback.lastStateUpdate) / 1000;
+            let expectedTime = playbackRef.current.currentTime;
+            if (playbackRef.current.playState === 'playing') {
+              const elapsed = (Date.now() - playbackRef.current.lastStateUpdate) / 1000;
               expectedTime += elapsed;
             }
 
@@ -144,14 +160,14 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             // Detect if Host/Moderator skipped/scrubbed on YouTube native timeline
             if (drift > 1.8) {
               flagInternalStateChange(1200);
-              onSeek(playerTime);
+              onSeekRef.current(playerTime);
             }
 
             // YT.PlayerState.PLAYING = 1, PAUSED = 2
-            if (event.data === 1 && playback.playState !== 'playing') {
-              onPlay();
-            } else if (event.data === 2 && playback.playState !== 'paused') {
-              onPause();
+            if (event.data === 1 && playbackRef.current.playState !== 'playing') {
+              onPlayRef.current();
+            } else if (event.data === 2 && playbackRef.current.playState !== 'paused') {
+              onPauseRef.current();
             }
           } catch (e) {
             // ignore
@@ -176,7 +192,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         playerRef.current = null;
       }
     };
-  }, [isApiReady, canControl]);
+  }, [isApiReady]);
 
   // Handle changing video ID dynamically on existing player
   useEffect(() => {
@@ -267,9 +283,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       flagInternalStateChange(2000);
 
       // 1. Calculate current target time
-      let targetTime = playback.currentTime;
-      if (playback.playState === 'playing') {
-        const elapsed = (Date.now() - playback.lastStateUpdate) / 1000;
+      let targetTime = playbackRef.current.currentTime;
+      if (playbackRef.current.playState === 'playing') {
+        const elapsed = (Date.now() - playbackRef.current.lastStateUpdate) / 1000;
         targetTime += elapsed;
       }
 
@@ -283,9 +299,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
       // 3. Sync play/pause state
       const ytState = player.getPlayerState();
-      if (playback.playState === 'playing' && ytState !== 1 && typeof player.playVideo === 'function') {
+      if (playbackRef.current.playState === 'playing' && ytState !== 1 && typeof player.playVideo === 'function') {
         player.playVideo();
-      } else if (playback.playState === 'paused' && ytState !== 2 && typeof player.pauseVideo === 'function') {
+      } else if (playbackRef.current.playState === 'paused' && ytState !== 2 && typeof player.pauseVideo === 'function') {
         player.pauseVideo();
       }
     } catch (e) {

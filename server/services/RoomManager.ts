@@ -40,20 +40,28 @@ export class RoomManager {
   /**
    * Create a new room
    */
-  public async createRoom(hostUserId: string, hostUsername: string, initialVideoId?: string): Promise<Room> {
+  public async createRoom(
+    hostUserId: string,
+    hostUsername: string,
+    initialVideoId?: string,
+    requestedCodeOrId?: string
+  ): Promise<Room> {
     if (!this.io) throw new Error('Socket server not initialized in RoomManager');
 
-    let code = this.generateRoomCode();
-    while (this.codeToRoomId.has(code)) {
-      code = this.generateRoomCode();
+    let code = requestedCodeOrId ? requestedCodeOrId.trim().toUpperCase() : this.generateRoomCode();
+    if (!requestedCodeOrId) {
+      while (this.codeToRoomId.has(code)) {
+        code = this.generateRoomCode();
+      }
     }
 
     const videoId = extractYouTubeId(initialVideoId || 'L_LUpnjgPso');
-    let roomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    let roomId = requestedCodeOrId ? requestedCodeOrId.trim() : `room-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     try {
       const dbRoom = await prisma.room.create({
         data: {
+          id: roomId,
           code,
           hostUserId,
           videoId,

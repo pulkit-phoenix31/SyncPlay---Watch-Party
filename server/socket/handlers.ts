@@ -59,13 +59,13 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       }
 
       const { roomId, username, userId: rawUserId } = parsed.data;
-      const room = await roomManager.getRoomAsync(roomId);
-
-      if (!room || room.isClosed) {
-        return sendError('Watch party room does not exist or has been closed.', 'ROOM_NOT_FOUND');
-      }
+      let room = await roomManager.getRoomAsync(roomId);
 
       const userId = rawUserId && rawUserId.trim() ? rawUserId.trim() : `user-${socket.id}`;
+
+      if (!room || room.isClosed) {
+        room = await roomManager.createRoom(userId, username, 'L_LUpnjgPso', roomId);
+      }
 
       // Add/reconnect participant to room OOP instance
       const participant = room.addOrReconnectParticipant(userId, username, socket.id);
@@ -222,7 +222,7 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
 
       const videoId = extractYouTubeId(parsed.data.videoId);
 
-      room.updatePlaybackState({ videoId, currentTime: 0, playState: 'paused' });
+      room.updatePlaybackState({ videoId, currentTime: 0, playState: 'playing' });
 
       io.to(room.id).emit('sync_state', room.getPlaybackState());
     } catch (err: any) {
