@@ -20,6 +20,7 @@ export const RoomView: React.FC<RoomViewProps> = ({ roomCode, initialUsername, o
   const watchParty = useWatchParty(roomCode, initialUsername);
   const [activeDrawer, setActiveDrawer] = useState<'chat' | 'members' | null>(null);
   const [transferTargetUserId, setTransferTargetUserId] = useState<string | null>(null);
+  const [lastSeenMsgCount, setLastSeenMsgCount] = useState(0);
 
   const currentUserRole = watchParty.currentUser?.role || 'Participant';
   const transferTargetParticipant =
@@ -35,8 +36,22 @@ export const RoomView: React.FC<RoomViewProps> = ({ roomCode, initialUsername, o
   }, []);
 
   const toggleDrawer = (drawer: 'chat' | 'members') => {
-    setActiveDrawer((prev) => (prev === drawer ? null : drawer));
+    setActiveDrawer((prev) => {
+      const next = prev === drawer ? null : drawer;
+      if (next === 'chat') {
+        // Mark all current messages as seen when chat opens
+        setLastSeenMsgCount(watchParty.messages.length);
+      }
+      return next;
+    });
   };
+
+  // Also mark messages seen if chat drawer is already open when new messages arrive
+  useEffect(() => {
+    if (activeDrawer === 'chat') {
+      setLastSeenMsgCount(watchParty.messages.length);
+    }
+  }, [watchParty.messages.length, activeDrawer]);
 
   const onlineCount = watchParty.participants.filter((p) => p.isOnline).length;
 
@@ -210,9 +225,9 @@ export const RoomView: React.FC<RoomViewProps> = ({ roomCode, initialUsername, o
         >
           <div className="relative">
             <MessageSquare className={`w-[22px] h-[22px] transition-all ${activeDrawer === 'chat' ? 'fill-[#FF5400]/20' : ''}`} />
-            {watchParty.messages.length > 0 && activeDrawer !== 'chat' && (
+            {watchParty.messages.length > lastSeenMsgCount && activeDrawer !== 'chat' && (
               <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-[#FF5400] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5">
-                {watchParty.messages.length > 9 ? '9+' : watchParty.messages.length}
+                {watchParty.messages.length - lastSeenMsgCount > 9 ? '9+' : watchParty.messages.length - lastSeenMsgCount}
               </span>
             )}
           </div>
