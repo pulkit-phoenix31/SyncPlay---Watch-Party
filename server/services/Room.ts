@@ -222,7 +222,12 @@ export class Room {
       this.playState = 'paused';
     }
 
-    if (params.currentTime !== undefined) {
+    if (params.currentTime !== undefined && params.currentTime > 0) {
+      this.currentTime = Math.max(0, params.currentTime);
+    } else if (params.currentTime === 0 && nowCalculated > 2.0 && params.videoId === undefined) {
+      // Guard: Ignore accidental 0-time resets if room was already playing/paused past 2 seconds
+      this.currentTime = nowCalculated;
+    } else if (params.currentTime !== undefined) {
       this.currentTime = Math.max(0, params.currentTime);
     } else if (params.playState && params.playState !== this.playState) {
       // Keep calculated time when transitioning play/pause

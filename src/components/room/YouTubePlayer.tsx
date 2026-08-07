@@ -171,9 +171,14 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
             // YT.PlayerState.PLAYING = 1, PAUSED = 2
             if (event.data === 1 && playbackRef.current.playState !== 'playing') {
-              onPlayRef.current(playerTime);
+              onPlayRef.current(playerTime > 0.1 ? playerTime : expectedTime);
             } else if (event.data === 2 && playbackRef.current.playState !== 'paused') {
-              onPauseRef.current(playerTime);
+              // If YouTube iframe paused at ~0s while room expected time was > 2s, it's a browser/iframe glitch.
+              if (playerTime < 0.5 && expectedTime > 2.0) {
+                syncPlayerWithState(player);
+              } else {
+                onPauseRef.current(playerTime);
+              }
             }
           } catch (e) {
             // ignore
