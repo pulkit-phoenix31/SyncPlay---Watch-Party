@@ -28,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-
+~
   const handleCopyCode = () => {
     if (!roomCode) return;
     navigator.clipboard.writeText(roomCode);
