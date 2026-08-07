@@ -325,11 +325,12 @@ export class Room {
   }
 
   public getPlaybackState() {
+    const now = Date.now();
     return {
       videoId: this.videoId,
       playState: this.playState,
       currentTime: this.getCurrentCalculatedTime(),
-      lastStateUpdate: this.lastStateUpdate,
+      lastStateUpdate: now,
       participants: this.getParticipantsList(),
     };
   }
