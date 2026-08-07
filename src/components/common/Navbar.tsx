@@ -68,9 +68,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="text-sm font-bold text-white leading-tight">
             SyncPlay
           </span>
-          <span className="text-[10px] text-[#AAAAAA] leading-tight">
-            Watch Party App
-          </span>
         </div>
       </div>
 

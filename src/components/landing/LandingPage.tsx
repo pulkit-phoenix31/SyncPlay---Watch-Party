@@ -205,10 +205,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
             </div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-lg text-white tracking-tight">
-                Watch Party
-              </span>
-              <span className="text-[10px] font-semibold bg-[#212121] text-[#AAAAAA] border border-[#3F3F3F] px-2 py-0.5 rounded">
-                YouTube Extension
+                SyncPlay
               </span>
             </div>
           </div>
