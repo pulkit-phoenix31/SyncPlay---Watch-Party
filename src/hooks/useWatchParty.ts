@@ -211,13 +211,9 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       setRoomId((prev) => prev || roomCode || initialRoomCode || 'active');
 
       const myId = currentUserIdRef.current;
-      if (!myId || myId === data.userId) {
-        setCurrentUser({
-          userId: data.userId,
-          username: data.username,
-          role: data.role,
-        });
-      } else {
+      if (myId && myId === data.userId) {
+        setCurrentUser((prev) => (prev ? { ...prev, role: data.role } : null));
+      } else if (data.username) {
         addToast(`${data.username} joined the party`, undefined, 'info');
       }
     }
@@ -455,39 +451,55 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     return () => clearInterval(interval);
   }, [activeRoomIdentifier]);
 
+  const getCalculatedTime = useCallback((currentPlayback: PlaybackState) => {
+    let time = currentPlayback.currentTime || 0;
+    if (currentPlayback.playState === 'playing' && currentPlayback.lastStateUpdate) {
+      const elapsed = (Date.now() - currentPlayback.lastStateUpdate) / 1000;
+      time += elapsed;
+    }
+    return Math.max(0, time);
+  }, []);
+
   // Wrapped action triggers with optimistic local updates (works even on Vercel/serverless disconnected mode)
   const safePlay = useCallback((time?: number) => {
-    setPlayback((prev) => ({
-      ...prev,
-      playState: 'playing',
-      currentTime: time !== undefined ? Math.max(0, time) : prev.currentTime,
-      lastStateUpdate: Date.now(),
-    }));
-    if (activeRoomIdentifier) {
-      emitPlay(time);
-    }
-  }, [activeRoomIdentifier]);
+    setPlayback((prev) => {
+      const targetTime = time !== undefined ? Math.max(0, time) : getCalculatedTime(prev);
+      if (activeRoomIdentifier) {
+        emitPlay(targetTime);
+      }
+      return {
+        ...prev,
+        playState: 'playing',
+        currentTime: targetTime,
+        lastStateUpdate: Date.now(),
+      };
+    });
+  }, [activeRoomIdentifier, getCalculatedTime]);
 
   const safePause = useCallback((time?: number) => {
-    setPlayback((prev) => ({
-      ...prev,
-      playState: 'paused',
-      currentTime: time !== undefined ? Math.max(0, time) : prev.currentTime,
-      lastStateUpdate: Date.now(),
-    }));
-    if (activeRoomIdentifier) {
-      emitPause(time);
-    }
-  }, [activeRoomIdentifier]);
+    setPlayback((prev) => {
+      const targetTime = time !== undefined ? Math.max(0, time) : getCalculatedTime(prev);
+      if (activeRoomIdentifier) {
+        emitPause(targetTime);
+      }
+      return {
+        ...prev,
+        playState: 'paused',
+        currentTime: targetTime,
+        lastStateUpdate: Date.now(),
+      };
+    });
+  }, [activeRoomIdentifier, getCalculatedTime]);
 
   const safeSeek = useCallback((time: number) => {
+    const cleanTime = Math.max(0, time);
     setPlayback((prev) => ({
       ...prev,
-      currentTime: Math.max(0, time),
+      currentTime: cleanTime,
       lastStateUpdate: Date.now(),
     }));
     if (activeRoomIdentifier) {
-      emitSeek(time);
+      emitSeek(cleanTime);
     }
   }, [activeRoomIdentifier]);
 

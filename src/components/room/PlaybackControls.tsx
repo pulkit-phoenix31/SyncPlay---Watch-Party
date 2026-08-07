@@ -62,9 +62,9 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
             whileTap={canControl ? { scale: 0.95 } : {}}
             onClick={() => {
               if (playback.playState === 'playing') {
-                onPause(playback.currentTime);
+                onPause();
               } else {
-                onPlay(playback.currentTime);
+                onPlay();
               }
             }}
             disabled={!canControl}

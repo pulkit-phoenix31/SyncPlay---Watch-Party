@@ -34,6 +34,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
   const [playerError, setPlayerError] = useState<string | null>(null);
   const isInternalStateChangeRef = useRef(false);
 
+  const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
+
   const canControl = userRole === 'Host' || userRole === 'Moderator';
 
   // Live refs to prevent stale closures and unnecessary player destruction
@@ -55,7 +57,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
   const loadedVideoIdRef = useRef<string | null>(null);
   const syncTimeoutRef = useRef<any>(null);
 
-  const flagInternalStateChange = (durationMs = 2000) => {
+  const flagInternalStateChange = (durationMs = 600) => {
     isInternalStateChangeRef.current = true;
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
@@ -120,7 +122,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       },
       events: {
         onReady: (event: any) => {
-          flagInternalStateChange(2500);
+          flagInternalStateChange(1000);
           syncPlayerWithState(event.target);
         },
         onStateChange: (event: any) => {
@@ -133,6 +135,10 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
               isInternalStateChangeRef.current = false;
             }
             return;
+          }
+
+          if (event.data === 1) {
+            setIsAutoplayBlocked(false);
           }
 
           if (!canControlRef.current) {
@@ -158,8 +164,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             const drift = Math.abs(playerTime - expectedTime);
 
             // Detect if Host/Moderator skipped/scrubbed on YouTube native timeline
-            if (drift > 1.8) {
-              flagInternalStateChange(1200);
+            if (drift > 1.2) {
+              flagInternalStateChange(600);
               onSeekRef.current(playerTime);
             }
 
@@ -203,7 +209,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
     loadedVideoIdRef.current = cleanVideoId;
     setPlayerError(null);
-    flagInternalStateChange(4000);
+    setIsAutoplayBlocked(false);
+    flagInternalStateChange(2000);
 
     try {
       if (playback.playState === 'playing' && typeof playerRef.current.loadVideoById === 'function') {
@@ -246,8 +253,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
         const drift = Math.abs(playerTime - expectedTime);
 
-        if (drift > 2.0) {
-          flagInternalStateChange(1200);
+        if (drift > 1.5) {
+          flagInternalStateChange(600);
           onSeek(playerTime);
         }
       } catch (e) {
@@ -266,10 +273,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       const player = playerRef.current;
       if (!player || typeof player.getPlayerState !== 'function') return;
 
-      if (!isInternalStateChangeRef.current) {
-        syncPlayerWithState(player);
-      }
-    }, 600);
+      syncPlayerWithState(player);
+    }, 500);
 
     return () => clearInterval(interval);
   }, [canControl, isApiReady, playback.playState, playback.currentTime, playback.lastStateUpdate]);
@@ -291,8 +296,6 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         return;
       }
 
-      flagInternalStateChange(2000);
-
       // 1. Calculate current target time
       let targetTime = playbackRef.current.currentTime;
       if (playbackRef.current.playState === 'playing') {
@@ -303,18 +306,30 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       const playerTime = typeof player.getCurrentTime === 'function' ? (player.getCurrentTime() || 0) : 0;
       const drift = Math.abs(playerTime - targetTime);
 
-      // 2. Adjust playback time if drift > 1.8s
-      if (drift > 1.8 && typeof player.seekTo === 'function') {
+      // 2. Adjust playback time if drift > 0.8s
+      if (drift > 0.8 && typeof player.seekTo === 'function') {
+        flagInternalStateChange(500);
         player.seekTo(targetTime, true);
       }
 
       // 3. Sync play/pause state
       if (playbackRef.current.playState === 'playing') {
         if (ytState !== 1 && typeof player.playVideo === 'function') {
+          flagInternalStateChange(500);
           player.playVideo();
+          // Check if autoplay was blocked by browser
+          setTimeout(() => {
+            if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+              const currentSt = playerRef.current.getPlayerState();
+              if (currentSt !== 1 && currentSt !== 3 && playbackRef.current.playState === 'playing') {
+                setIsAutoplayBlocked(true);
+              }
+            }
+          }, 600);
         }
       } else if (playbackRef.current.playState === 'paused') {
         if (ytState !== 2 && typeof player.pauseVideo === 'function') {
+          flagInternalStateChange(500);
           player.pauseVideo();
         }
       }
@@ -336,6 +351,28 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           <AlertCircle className="w-12 h-12 text-rose-500 mb-3 animate-bounce" />
           <h3 className="text-lg font-bold text-gray-100 mb-1">Playback Unavailable</h3>
           <p className="text-sm text-gray-400 max-w-md">{playerError}</p>
+        </div>
+      )}
+
+      {/* Autoplay Blocked User Gesture Overlay */}
+      {isAutoplayBlocked && !playerError && (
+        <div
+          onClick={() => {
+            if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+              try {
+                if (typeof playerRef.current.unMute === 'function') playerRef.current.unMute();
+                playerRef.current.playVideo();
+              } catch (e) {}
+            }
+            setIsAutoplayBlocked(false);
+          }}
+          className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center cursor-pointer group/sync transition-all"
+        >
+          <div className="w-16 h-16 rounded-full bg-[#FF5400] flex items-center justify-center shadow-[0_0_30px_rgba(255,84,0,0.5)] group-hover/sync:scale-110 transition-transform mb-3">
+            <Play className="w-8 h-8 text-black fill-black ml-1" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1">Click to Sync & Start Video</h3>
+          <p className="text-xs text-gray-300">Browser requires user interaction to enable synchronized playback</p>
         </div>
       )}
 
