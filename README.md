@@ -29,12 +29,7 @@
       <sub><b>📱 Mobile — Bottom Nav with Slide Drawers</b></sub>
     </td>
   </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <img src=".github/assets/landing.png" alt="Landing Page" width="80%"/><br/>
-      <sub><b>🏠 Landing Page — Create or Join a Room</b></sub>
-    </td>
-  </tr>
+  
 </table>
 
 ---
