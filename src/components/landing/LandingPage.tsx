@@ -19,34 +19,12 @@ interface LandingPageProps {
   initialCode?: string;
 }
 
-const FEATURED_VIDEOS = [
-  {
-    id: 'L_LUpnjgPso',
-    title: 'Lofi Hip Hop Radio',
-    category: 'Music / Chill',
-    thumbnail: 'https://img.youtube.com/vi/L_LUpnjgPso/hqdefault.jpg',
-  },
-  {
-    id: '4xDzrJKXOOY',
-    title: 'Synthwave Radio 24/7',
-    category: 'Retro Beats',
-    thumbnail: 'https://img.youtube.com/vi/4xDzrJKXOOY/hqdefault.jpg',
-  },
-  {
-    id: 'LXb3EKWsInQ',
-    title: '4K Costa Rica Wildlife',
-    category: 'Nature Cinema',
-    thumbnail: 'https://img.youtube.com/vi/LXb3EKWsInQ/hqdefault.jpg',
-  },
-];
-
 const STORAGE_KEY = 'yt_watch_party_user_session';
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCode }) => {
   const [tab, setTab] = useState<'create' | 'join'>(initialCode ? 'join' : 'create');
   const [username, setUsername] = useState('');
   const [joinCode, setJoinCode] = useState(initialCode || '');
-  const [selectedVideoId, setSelectedVideoId] = useState('L_LUpnjgPso');
   const [customVideoUrl, setCustomVideoUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -105,7 +83,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
   const handleCreateParty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
-      setErrorMsg('Please enter your name to start');
+      setErrorMsg('Please enter your display name to start');
+      return;
+    }
+    if (!customVideoUrl.trim()) {
+      setErrorMsg('Please enter a YouTube video URL or Video ID');
       return;
     }
 
@@ -128,7 +110,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
         clientUserId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       }
 
-      const targetVideoId = extractYouTubeId(customVideoUrl.trim() || selectedVideoId);
+      const targetVideoId = extractYouTubeId(customVideoUrl.trim());
       let roomCode = '';
       let hostUserId = clientUserId;
 
@@ -397,52 +379,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
 
               <div>
                 <label className="block text-xs font-medium text-[#AAAAAA] mb-1.5 uppercase tracking-wider">
-                  Select Starting Video
+                  YouTube Video Link or Video ID
                 </label>
-                <div className="grid grid-cols-3 gap-2 mb-2.5">
-                  {FEATURED_VIDEOS.map((vid) => {
-                    const isSelected = selectedVideoId === vid.id && !customVideoUrl;
-                    return (
-                      <button
-                        key={vid.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedVideoId(vid.id);
-                          setCustomVideoUrl('');
-                        }}
-                        className={`relative rounded overflow-hidden border p-1 text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'border-[#FF0000] bg-[#0F0F0F]'
-                            : 'border-[#3F3F3F] bg-[#0F0F0F] hover:border-[#717171]'
-                        }`}
-                      >
-                        <div className="relative aspect-video rounded-xs overflow-hidden mb-1 bg-[#181818]">
-                          <img
-                            src={vid.thumbnail}
-                            alt={vid.title}
-                            className="w-full h-full object-cover"
-                          />
-                          {isSelected && (
-                            <div className="absolute top-1 right-1 bg-[#FF0000] text-white p-0.5 rounded-full">
-                              <Check className="w-2.5 h-2.5" />
-                            </div>
-                          )}
-                        </div>
-                        <span className="text-[11px] font-medium text-[#AAAAAA] block truncate">
-                          {vid.title}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <p className="text-[11px] text-[#AAAAAA] mb-1">Or paste custom YouTube URL:</p>
                 <input
                   type="text"
                   value={customVideoUrl}
                   onChange={(e) => setCustomVideoUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  className="w-full bg-[#0F0F0F] border border-[#3F3F3F] rounded-lg px-3.5 py-2 text-xs text-white placeholder-[#717171] focus:outline-none focus:border-white transition-colors"
+                  placeholder="Paste YouTube URL (e.g. https://www.youtube.com/watch?v=...)"
+                  className="w-full bg-[#0F0F0F] border border-[#3F3F3F] rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-[#717171] focus:outline-none focus:border-white transition-colors"
                 />
               </div>
 
