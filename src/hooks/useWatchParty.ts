@@ -186,6 +186,17 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
         setParticipants(newPlayback.participants);
       }
       setRoomId((prev) => prev || roomCode || initialRoomCode || 'active');
+
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          parsed.videoId = newPlayback.videoId;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        }
+      } catch (e) {
+        // ignore
+      }
     }
 
     function onUserJoined(data: {
@@ -404,7 +415,12 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
         }
         if (data && data.playback && data.playback.videoId) {
           setPlayback((prev) => {
-            if (prev.videoId !== data.playback.videoId) {
+            const hasChanged =
+              prev.videoId !== data.playback.videoId ||
+              prev.playState !== data.playback.playState ||
+              Math.abs(prev.currentTime - (data.playback.currentTime || 0)) > 2.5;
+
+            if (hasChanged) {
               return {
                 ...prev,
                 videoId: data.playback.videoId,
@@ -471,8 +487,25 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       playState: 'playing',
       lastStateUpdate: Date.now(),
     }));
+
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        parsed.videoId = cleanId;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      }
+    } catch (e) {
+      // ignore
+    }
+
     if (activeRoomIdentifier) {
       emitChangeVideo(cleanId);
+      fetch(`/api/rooms/${activeRoomIdentifier}/video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: cleanId }),
+      }).catch(() => {});
     }
   }, [activeRoomIdentifier]);
 

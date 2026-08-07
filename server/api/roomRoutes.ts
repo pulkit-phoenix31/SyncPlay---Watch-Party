@@ -76,4 +76,26 @@ router.delete('/:code/participants/:userId', async (req, res) => {
   }
 });
 
+// POST /api/rooms/:code/video - Update room video ID
+router.post('/:code/video', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { videoId: rawVideoId } = req.body || {};
+    if (!rawVideoId) {
+      return res.status(400).json({ error: 'videoId is required' });
+    }
+
+    const videoId = extractYouTubeId(rawVideoId);
+    const roomManager = RoomManager.getInstance();
+    const room = await roomManager.getRoomAsync(code);
+    if (room) {
+      room.updatePlaybackState({ videoId, currentTime: 0, playState: 'playing' });
+    }
+    return res.json({ status: 'ok', videoId });
+  } catch (err: any) {
+    console.error('Error updating room video:', err);
+    return res.status(500).json({ error: 'Failed to update video' });
+  }
+});
+
 export default router;
