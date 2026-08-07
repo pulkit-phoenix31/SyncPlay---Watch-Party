@@ -401,39 +401,36 @@ export class Room {
   /**
    * Database persistence helpers
    */
-  private syncTimer: NodeJS.Timeout | null = null;
+  public async syncRoomToDBImmediate() {
+    try {
+      await prisma.room.upsert({
+        where: { id: this.id },
+        update: {
+          hostUserId: this.hostUserId,
+          videoId: this.videoId,
+          playState: this.playState,
+          currentTime: this.currentTime,
+          lastStateUpdate: new Date(this.lastStateUpdate),
+          isClosed: this.isClosed,
+        },
+        create: {
+          id: this.id,
+          code: this.code,
+          hostUserId: this.hostUserId,
+          videoId: this.videoId,
+          playState: this.playState,
+          currentTime: this.currentTime,
+          lastStateUpdate: new Date(this.lastStateUpdate),
+          isClosed: this.isClosed,
+        },
+      });
+    } catch (e) {
+      // Silent catch for DB sync errors
+    }
+  }
 
   private syncRoomToDB() {
-    if (this.syncTimer) return;
-
-    this.syncTimer = setTimeout(() => {
-      this.syncTimer = null;
-      prisma.room
-        .upsert({
-          where: { id: this.id },
-          update: {
-            hostUserId: this.hostUserId,
-            videoId: this.videoId,
-            playState: this.playState,
-            currentTime: this.currentTime,
-            lastStateUpdate: new Date(this.lastStateUpdate),
-            isClosed: this.isClosed,
-          },
-          create: {
-            id: this.id,
-            code: this.code,
-            hostUserId: this.hostUserId,
-            videoId: this.videoId,
-            playState: this.playState,
-            currentTime: this.currentTime,
-            lastStateUpdate: new Date(this.lastStateUpdate),
-            isClosed: this.isClosed,
-          },
-        })
-        .catch(() => {
-          // Silent catch for DB sync errors to prevent log noise when SQLite is busy
-        });
-    }, 1000);
+    this.syncRoomToDBImmediate();
   }
 
   private syncParticipantToDB(p: Participant) {

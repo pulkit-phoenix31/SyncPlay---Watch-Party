@@ -29,6 +29,7 @@ router.post('/', async (req, res) => {
     const videoId = extractYouTubeId(rawVideoId || '');
 
     const room = await roomManager.createRoom(hostUserId, hostUsername, videoId);
+    await room.syncRoomToDBImmediate();
 
     return res.status(201).json({
       roomId: room.id,
@@ -90,6 +91,7 @@ router.post('/:code/video', async (req, res) => {
     const room = await roomManager.getRoomAsync(code);
     if (room) {
       room.updatePlaybackState({ videoId, currentTime: 0, playState: 'playing' });
+      await room.syncRoomToDBImmediate();
     }
     return res.json({ status: 'ok', videoId });
   } catch (err: any) {

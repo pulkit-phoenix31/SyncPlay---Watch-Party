@@ -423,27 +423,8 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
         const res = await fetch(`/api/rooms/${activeRoomIdentifier}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (data && data.participants && Array.isArray(data.participants)) {
+        if (data && data.participants && Array.isArray(data.participants) && data.participants.length > 0) {
           setParticipants(data.participants);
-
-          const myId = currentUserIdRef.current;
-          if (myId && data.participants.length > 0) {
-            const isStillParticipant = data.participants.some(
-              (p: any) => p.userId === myId || p.id === myId
-            );
-            if (!isStillParticipant) {
-              addToast('Removed from Room', 'You were removed by the Host.', 'error');
-              setRoomId(null);
-              setRoomCode(null);
-              setCurrentUser(null);
-              localStorage.removeItem(STORAGE_KEY);
-              if (typeof window !== 'undefined') {
-                window.history.pushState({}, '', window.location.pathname);
-                window.location.href = window.location.origin;
-              }
-              return;
-            }
-          }
         }
         if (data && data.playback && data.playback.videoId) {
           setPlayback((prev) => {
