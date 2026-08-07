@@ -173,11 +173,12 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             if (event.data === 1 && playbackRef.current.playState !== 'playing') {
               onPlayRef.current(playerTime > 0.1 ? playerTime : expectedTime);
             } else if (event.data === 2 && playbackRef.current.playState !== 'paused') {
-              // If YouTube iframe paused at ~0s while room expected time was > 2s, it's a browser/iframe glitch.
-              if (playerTime < 0.5 && expectedTime > 2.0) {
+              // If YouTube iframe paused at ~0s while room expected time was > 1s, it's a browser/iframe glitch.
+              if (playerTime < 0.5 && expectedTime > 1.0) {
                 syncPlayerWithState(player);
               } else {
-                onPauseRef.current(playerTime);
+                const pauseTime = playerTime > 0.5 ? playerTime : expectedTime;
+                onPauseRef.current(pauseTime);
               }
             }
           } catch (e) {
@@ -245,7 +246,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       if (isInternalStateChangeRef.current) return;
 
       const ytState = player.getPlayerState();
-      if (ytState === 3) return;
+      // Ignore during buffering (3) or paused (2)
+      if (ytState === 3 || ytState === 2) return;
 
       try {
         const playerTime = player.getCurrentTime() || 0;
@@ -258,14 +260,14 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
         const drift = Math.abs(playerTime - expectedTime);
 
-        if (drift > 1.5) {
+        if (drift > 2.5) {
           flagInternalStateChange(600);
           onSeek(playerTime);
         }
       } catch (e) {
         // ignore
       }
-    }, 500);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [canControl, isApiReady, playback.currentTime, playback.playState, playback.lastStateUpdate, onSeek]);
@@ -279,7 +281,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       if (!player || typeof player.getPlayerState !== 'function') return;
 
       syncPlayerWithState(player);
-    }, 500);
+    }, 600);
 
     return () => clearInterval(interval);
   }, [canControl, isApiReady, playback.playState, playback.currentTime, playback.lastStateUpdate]);
@@ -311,8 +313,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       const playerTime = typeof player.getCurrentTime === 'function' ? (player.getCurrentTime() || 0) : 0;
       const drift = Math.abs(playerTime - targetTime);
 
-      // 2. Adjust playback time if drift > 0.8s
-      if (drift > 0.8 && typeof player.seekTo === 'function') {
+      // 2. Host is the master source — never force Host's smooth playing player to seek!
+      // Participants adjust playback time if drift > 2.0s
+      if (!canControlRef.current && drift > 2.0 && typeof player.seekTo === 'function') {
         flagInternalStateChange(500);
         player.seekTo(targetTime, true);
       }

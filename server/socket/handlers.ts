@@ -87,7 +87,7 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       // 2. Send chat_history to joining client
       socket.emit('chat_history', { messages: room.chatMessages });
 
-      // 3. Broadcast user_joined & sync_state to all clients in room (including host)
+      // 3. Broadcast user_joined to all clients in room
       const userJoinedPayload = {
         username: participant.username,
         userId: participant.id,
@@ -95,7 +95,6 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
         participants: participantsList,
       };
       io.to(room.id).emit('user_joined', userJoinedPayload);
-      io.to(room.id).emit('sync_state', currentPlayback);
     } catch (err: any) {
       console.error('Error handling join_room:', err);
       sendError('Failed to join room due to a server error.', 'SERVER_ERROR');
