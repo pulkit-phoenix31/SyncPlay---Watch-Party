@@ -2,7 +2,8 @@
  * Utility to parse YouTube video ID from full URL or standalone ID
  */
 export function extractYouTubeId(input: string): string {
-  if (!input) return 'L_LUpnjgPso';
+  const DEFAULT_ID = 'L_LUpnjgPso';
+  if (!input) return DEFAULT_ID;
   const trimmed = input.trim();
 
   // If already an 11-char ID
@@ -18,18 +19,22 @@ export function extractYouTubeId(input: string): string {
 
     const url = new URL(urlString);
 
-    // If youtube.com / m.youtube.com / youtube-nocookie.com
+    // If youtube.com / m.youtube.com / music.youtube.com / youtube-nocookie.com
     if (url.hostname.includes('youtube.com') || url.hostname.includes('youtube-nocookie.com')) {
       const vParam = url.searchParams.get('v');
-      if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam)) {
-        return vParam;
+      if (vParam) {
+        const cleanV = vParam.substring(0, 11);
+        if (/^[a-zA-Z0-9_-]{11}$/.test(cleanV)) {
+          return cleanV;
+        }
       }
 
-      // Check path segments (e.g., /embed/ID, /shorts/ID, /v/ID)
+      // Check path segments (e.g., /embed/ID, /shorts/ID, /v/ID, /live/ID)
       const pathSegments = url.pathname.split('/').filter(Boolean);
       for (const segment of pathSegments) {
-        if (/^[a-zA-Z0-9_-]{11}$/.test(segment)) {
-          return segment;
+        const cleanSeg = segment.substring(0, 11);
+        if (/^[a-zA-Z0-9_-]{11}$/.test(cleanSeg)) {
+          return cleanSeg;
         }
       }
     }
@@ -37,8 +42,11 @@ export function extractYouTubeId(input: string): string {
     // If youtu.be/ID
     if (url.hostname.includes('youtu.be')) {
       const pathSegments = url.pathname.split('/').filter(Boolean);
-      if (pathSegments.length > 0 && /^[a-zA-Z0-9_-]{11}$/.test(pathSegments[0])) {
-        return pathSegments[0];
+      if (pathSegments.length > 0) {
+        const cleanSeg = pathSegments[0].substring(0, 11);
+        if (/^[a-zA-Z0-9_-]{11}$/.test(cleanSeg)) {
+          return cleanSeg;
+        }
       }
     }
   } catch (e) {
@@ -47,7 +55,7 @@ export function extractYouTubeId(input: string): string {
 
   // 2. Comprehensive Regex fallback
   const patterns = [
-    /(?:v=|\/embed\/|\/shorts\/|\/v\/|youtu\.be\/|\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
+    /(?:v=|\/embed\/|\/shorts\/|\/live\/|\/v\/|youtu\.be\/|\/watch\?.*v=)([a-zA-Z0-9_-]{11})/,
     /([a-zA-Z0-9_-]{11})/,
   ];
 
@@ -58,5 +66,6 @@ export function extractYouTubeId(input: string): string {
     }
   }
 
-  return trimmed;
+  return DEFAULT_ID;
 }
+

@@ -141,6 +141,12 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     }
   }, [participants, currentUser?.userId]);
 
+  // Keep a ref to currentUser.userId to avoid re-subscribing socket listeners on every user state change
+  const currentUserIdRef = useRef<string | null>(currentUser?.userId || null);
+  useEffect(() => {
+    currentUserIdRef.current = currentUser?.userId || null;
+  }, [currentUser?.userId]);
+
   // Handle Socket Events & Connection lifecycle
   useEffect(() => {
     const socket = connectSocket();
@@ -149,7 +155,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       const session = getOrCreateSession();
       if (session && session.roomCode) {
         setRoomCode(session.roomCode);
-        emitJoinRoom(session.roomCode, session.username, session.userId);
+        emitJoinRoom(session.roomCode, session.username, session.userId, playback.videoId);
       }
     };
 
@@ -167,8 +173,11 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       setConnectionStatus('reconnecting');
     }
 
-    function onSyncState(newPlayback: PlaybackState) {
+    function onSyncState(newPlayback: PlaybackState & { participants?: ParticipantData[] }) {
       setPlayback(newPlayback);
+      if (Array.isArray(newPlayback.participants)) {
+        setParticipants(newPlayback.participants);
+      }
       setRoomId((prev) => prev || roomCode || initialRoomCode || 'active');
     }
 
@@ -178,10 +187,13 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       role: Role;
       participants: ParticipantData[];
     }) {
-      setParticipants(data.participants);
+      if (Array.isArray(data.participants)) {
+        setParticipants(data.participants);
+      }
       setRoomId((prev) => prev || roomCode || initialRoomCode || 'active');
 
-      if (currentUser?.userId === data.userId || !currentUser?.userId) {
+      const myId = currentUserIdRef.current;
+      if (!myId || myId === data.userId) {
         setCurrentUser({
           userId: data.userId,
           username: data.username,
@@ -197,8 +209,10 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       userId: string;
       participants: ParticipantData[];
     }) {
-      setParticipants(data.participants);
-      if (currentUser?.userId !== data.userId) {
+      if (Array.isArray(data.participants)) {
+        setParticipants(data.participants);
+      }
+      if (currentUserIdRef.current !== data.userId) {
         addToast(`${data.username} left the room`, undefined, 'warning');
       }
     }
@@ -209,8 +223,10 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       role: Role;
       participants: ParticipantData[];
     }) {
-      setParticipants(data.participants);
-      if (data.userId === currentUser?.userId) {
+      if (Array.isArray(data.participants)) {
+        setParticipants(data.participants);
+      }
+      if (data.userId === currentUserIdRef.current) {
         addToast(`Role Updated`, `You are now a ${data.role}`, 'success');
       } else {
         addToast(`Role Updated`, `${data.username} is now a ${data.role}`, 'info');
@@ -221,8 +237,10 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       userId: string;
       participants: ParticipantData[];
     }) {
-      setParticipants(data.participants);
-      if (data.userId === currentUser?.userId) {
+      if (Array.isArray(data.participants)) {
+        setParticipants(data.participants);
+      }
+      if (data.userId === currentUserIdRef.current) {
         addToast('Removed from Room', 'You were removed by the Host.', 'error');
         setRoomId(null);
         setRoomCode(null);
@@ -238,9 +256,11 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       newHostUsername: string;
       participants: ParticipantData[];
     }) {
-      setParticipants(data.participants);
+      if (Array.isArray(data.participants)) {
+        setParticipants(data.participants);
+      }
       setHostUserId(data.newHostId);
-      if (data.newHostId === currentUser?.userId) {
+      if (data.newHostId === currentUserIdRef.current) {
         addToast('Host Privileges Received', 'You are now the Host of this watch party!', 'success');
       } else {
         addToast('Host Transferred', `${data.newHostUsername} is now the Host`, 'info');
@@ -264,7 +284,6 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
 
     function onError(data: { message: string; code?: string }) {
       if (data.code === 'UNAUTHORIZED' && !roomId) {
-        // Silently re-attempt join if session sync is pending
         attemptJoin();
         return;
       }
@@ -305,7 +324,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       socket.off('reaction', onReaction);
       socket.off('error', onError);
     };
-  }, [currentUser?.userId, addToast, getOrCreateSession, initialRoomCode, roomCode, roomId]);
+  }, [addToast, getOrCreateSession, initialRoomCode, roomCode, roomId]);
 
   // Method to join room manually from Landing Page
   const joinRoom = useCallback((targetCode: string, username: string) => {

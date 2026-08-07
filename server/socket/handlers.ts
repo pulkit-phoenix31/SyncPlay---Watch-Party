@@ -58,13 +58,13 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
         return sendError(getZodErrorMessage(parsed.error, 'Invalid join room payload'), 'VALIDATION_ERROR');
       }
 
-      const { roomId, username, userId: rawUserId } = parsed.data;
+      const { roomId, username, userId: rawUserId, videoId } = parsed.data;
       let room = await roomManager.getRoomAsync(roomId);
 
       const userId = rawUserId && rawUserId.trim() ? rawUserId.trim() : `user-${socket.id}`;
 
       if (!room || room.isClosed) {
-        room = await roomManager.createRoom(userId, username, 'L_LUpnjgPso', roomId);
+        room = await roomManager.createRoom(userId, username, videoId || 'L_LUpnjgPso', roomId);
       }
 
       // Add/reconnect participant to room OOP instance
@@ -73,10 +73,12 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       // Map socket in RoomManager
       roomManager.registerSocket(socket.id, room.id, participant.id);
 
-      // Join socket room channel
-      socket.join(room.id);
+      // Join socket room channel (await socket.join for Socket.IO v4 async adapter registration)
+      await socket.join(room.id);
 
       console.log(`[Socket ${socket.id}] User '${participant.username}' (${participant.role}) joined room '${room.code}'`);
+
+      const participantsList = room.getParticipantsList();
 
       // 1. Send sync_state to joining client immediately
       socket.emit('sync_state', room.getPlaybackState());
@@ -84,13 +86,15 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       // 2. Send chat_history to joining client
       socket.emit('chat_history', { messages: room.chatMessages });
 
-      // 3. Broadcast user_joined to all clients in room (including self so participant list is up to date)
-      io.to(room.id).emit('user_joined', {
+      // 3. Broadcast user_joined to all clients in room (and direct to joining socket)
+      const userJoinedPayload = {
         username: participant.username,
         userId: participant.id,
         role: participant.role,
-        participants: room.getParticipantsList(),
-      });
+        participants: participantsList,
+      };
+      socket.emit('user_joined', userJoinedPayload);
+      socket.to(room.id).emit('user_joined', userJoinedPayload);
     } catch (err: any) {
       console.error('Error handling join_room:', err);
       sendError('Failed to join room due to a server error.', 'SERVER_ERROR');

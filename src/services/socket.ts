@@ -31,9 +31,9 @@ export function disconnectSocket() {
 }
 
 // Client event emitters
-export function emitJoinRoom(roomId: string, username: string, userId?: string) {
+export function emitJoinRoom(roomId: string, username: string, userId?: string, videoId?: string) {
   const s = connectSocket();
-  s.emit('join_room', { roomId, username, userId });
+  s.emit('join_room', { roomId, username, userId, videoId });
 }
 
 export function emitLeaveRoom(roomId: string) {

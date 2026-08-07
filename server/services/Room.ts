@@ -325,6 +325,7 @@ export class Room {
       playState: this.playState,
       currentTime: this.getCurrentCalculatedTime(),
       lastStateUpdate: this.lastStateUpdate,
+      participants: this.getParticipantsList(),
     };
   }
 

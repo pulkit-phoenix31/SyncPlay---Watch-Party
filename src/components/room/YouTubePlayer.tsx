@@ -203,7 +203,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
     loadedVideoIdRef.current = cleanVideoId;
     setPlayerError(null);
-    flagInternalStateChange(3000);
+    flagInternalStateChange(4000);
 
     try {
       if (typeof playerRef.current.loadVideoById === 'function') {
@@ -229,6 +229,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       if (!player || typeof player.getCurrentTime !== 'function' || typeof player.getPlayerState !== 'function') return;
 
       if (isInternalStateChangeRef.current) return;
+
+      const ytState = player.getPlayerState();
+      if (ytState === -1 || ytState === 3 || ytState === 5) return;
 
       try {
         const playerTime = player.getCurrentTime() || 0;
@@ -280,6 +283,12 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     if (!player || typeof player.getPlayerState !== 'function') return;
 
     try {
+      const ytState = player.getPlayerState();
+      // Skip sync during video loading/buffering transitions (-1: UNSTARTED, 3: BUFFERING, 5: CUED)
+      if (ytState === -1 || ytState === 3 || ytState === 5) {
+        return;
+      }
+
       flagInternalStateChange(2000);
 
       // 1. Calculate current target time
@@ -298,7 +307,6 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       }
 
       // 3. Sync play/pause state
-      const ytState = player.getPlayerState();
       if (playbackRef.current.playState === 'playing' && ytState !== 1 && typeof player.playVideo === 'function') {
         player.playVideo();
       } else if (playbackRef.current.playState === 'paused' && ytState !== 2 && typeof player.pauseVideo === 'function') {

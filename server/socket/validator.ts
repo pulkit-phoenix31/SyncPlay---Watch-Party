@@ -4,6 +4,7 @@ export const JoinRoomSchema = z.object({
   roomId: z.string().min(1, 'Room ID or code is required'),
   username: z.string().min(1, 'Username is required').max(30, 'Username too long'),
   userId: z.string().optional(), // Optional client-persisted user ID for reconnection
+  videoId: z.string().optional(), // Optional video ID when creating room on join
 });
 
 export const LeaveRoomSchema = z.object({
