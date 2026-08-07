@@ -23,6 +23,7 @@ import {
   ToastMessage,
   ConnectionStatus,
 } from '../types/index.js';
+import { extractYouTubeId } from '../utils/youtube.js';
 
 const STORAGE_KEY = 'yt_watch_party_user_session';
 
@@ -345,8 +346,10 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
   }, [roomCode]);
 
   // Wrapped socket action triggers with active room checks and optimistic local updates
+  const activeRoomIdentifier = roomId || roomCode || initialRoomCode;
+
   const safePlay = useCallback(() => {
-    if (connectionStatus === 'connected' && roomId) {
+    if (connectionStatus === 'connected' && activeRoomIdentifier) {
       setPlayback((prev) => ({
         ...prev,
         playState: 'playing',
@@ -354,10 +357,10 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       }));
       emitPlay();
     }
-  }, [connectionStatus, roomId]);
+  }, [connectionStatus, activeRoomIdentifier]);
 
   const safePause = useCallback(() => {
-    if (connectionStatus === 'connected' && roomId) {
+    if (connectionStatus === 'connected' && activeRoomIdentifier) {
       setPlayback((prev) => ({
         ...prev,
         playState: 'paused',
@@ -365,10 +368,10 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       }));
       emitPause();
     }
-  }, [connectionStatus, roomId]);
+  }, [connectionStatus, activeRoomIdentifier]);
 
   const safeSeek = useCallback((time: number) => {
-    if (connectionStatus === 'connected' && roomId) {
+    if (connectionStatus === 'connected' && activeRoomIdentifier) {
       setPlayback((prev) => ({
         ...prev,
         currentTime: time,
@@ -376,32 +379,33 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       }));
       emitSeek(time);
     }
-  }, [connectionStatus, roomId]);
+  }, [connectionStatus, activeRoomIdentifier]);
 
   const safeChangeVideo = useCallback((videoId: string) => {
-    if (connectionStatus === 'connected' && roomId) {
+    if (connectionStatus === 'connected' && activeRoomIdentifier) {
+      const cleanId = extractYouTubeId(videoId);
       setPlayback((prev) => ({
         ...prev,
-        videoId,
+        videoId: cleanId,
         currentTime: 0,
-        playState: 'paused',
+        playState: 'playing',
         lastStateUpdate: Date.now(),
       }));
-      emitChangeVideo(videoId);
+      emitChangeVideo(cleanId);
     }
-  }, [connectionStatus, roomId]);
+  }, [connectionStatus, activeRoomIdentifier]);
 
   const safeSendMessage = useCallback((msg: string) => {
-    if (connectionStatus === 'connected' && roomId) {
+    if (connectionStatus === 'connected' && activeRoomIdentifier) {
       emitSendMessage(msg);
     }
-  }, [connectionStatus, roomId]);
+  }, [connectionStatus, activeRoomIdentifier]);
 
   const safeSendReaction = useCallback((emoji: string) => {
-    if (connectionStatus === 'connected' && roomId) {
+    if (connectionStatus === 'connected' && activeRoomIdentifier) {
       emitSendReaction(emoji);
     }
-  }, [connectionStatus, roomId]);
+  }, [connectionStatus, activeRoomIdentifier]);
 
   return {
     connectionStatus,

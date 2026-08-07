@@ -36,6 +36,19 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
   const canControl = userRole === 'Host' || userRole === 'Moderator';
 
+  const loadedVideoIdRef = useRef<string | null>(null);
+  const syncTimeoutRef = useRef<any>(null);
+
+  const flagInternalStateChange = (durationMs = 2000) => {
+    isInternalStateChangeRef.current = true;
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+    syncTimeoutRef.current = setTimeout(() => {
+      isInternalStateChangeRef.current = false;
+    }, durationMs);
+  };
+
   // Load YouTube IFrame API
   useEffect(() => {
     if (window.YT && window.YT.Player) {
@@ -63,21 +76,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     }
   }, []);
 
-  // Initialize YT.Player instance
+  // Initialize YT.Player instance (once when API is ready)
   useEffect(() => {
-    if (!isApiReady || !containerRef.current) return;
-
-    // Clean up previous player and target
-    if (playerRef.current) {
-      try {
-        if (typeof playerRef.current.destroy === 'function') {
-          playerRef.current.destroy();
-        }
-      } catch (e) {
-        // ignore
-      }
-      playerRef.current = null;
-    }
+    if (!isApiReady || !containerRef.current || playerRef.current) return;
 
     containerRef.current.innerHTML = '';
     const playerTarget = document.createElement('div');
@@ -86,8 +87,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     containerRef.current.appendChild(playerTarget);
 
     setPlayerError(null);
-
     const cleanVideoId = extractYouTubeId(playback.videoId);
+    loadedVideoIdRef.current = cleanVideoId;
 
     playerRef.current = new window.YT.Player(targetId, {
       width: '100%',
@@ -95,7 +96,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       videoId: cleanVideoId,
       playerVars: {
         autoplay: playback.playState === 'playing' ? 1 : 0,
-        controls: 1, // Enable controls for all (volume, fullscreen), socket will sync state
+        controls: 1,
         playsinline: 1,
         rel: 0,
         enablejsapi: 1,
@@ -103,21 +104,23 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       },
       events: {
         onReady: (event: any) => {
-          isInternalStateChangeRef.current = true;
+          flagInternalStateChange(2500);
           syncPlayerWithState(event.target);
-          setTimeout(() => {
-            isInternalStateChangeRef.current = false;
-          }, 1000);
         },
         onStateChange: (event: any) => {
           // Prevent echo loop when update was triggered programmatically from server
           if (isInternalStateChangeRef.current) {
+            if (
+              (event.data === 1 && playback.playState === 'playing') ||
+              (event.data === 2 && playback.playState === 'paused')
+            ) {
+              isInternalStateChangeRef.current = false;
+            }
             return;
           }
 
           if (!canControl) {
             // Participant tried to play, pause or scrub via YouTube iframe controls
-            // Instantly force resync back to official server playback state
             const player = event.target;
             if (player) {
               syncPlayerWithState(player);
@@ -139,12 +142,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             const drift = Math.abs(playerTime - expectedTime);
 
             // Detect if Host/Moderator skipped/scrubbed on YouTube native timeline
-            if (drift > 1.5) {
-              isInternalStateChangeRef.current = true;
+            if (drift > 1.8) {
+              flagInternalStateChange(1200);
               onSeek(playerTime);
-              setTimeout(() => {
-                isInternalStateChangeRef.current = false;
-              }, 800);
             }
 
             // YT.PlayerState.PLAYING = 1, PAUSED = 2
@@ -176,7 +176,33 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         playerRef.current = null;
       }
     };
-  }, [isApiReady, playback.videoId, canControl]);
+  }, [isApiReady, canControl]);
+
+  // Handle changing video ID dynamically on existing player
+  useEffect(() => {
+    if (!playerRef.current || !isApiReady) return;
+
+    const cleanVideoId = extractYouTubeId(playback.videoId);
+    if (loadedVideoIdRef.current === cleanVideoId) return;
+
+    loadedVideoIdRef.current = cleanVideoId;
+    setPlayerError(null);
+    flagInternalStateChange(3000);
+
+    try {
+      if (typeof playerRef.current.loadVideoById === 'function') {
+        playerRef.current.loadVideoById({
+          videoId: cleanVideoId,
+          startSeconds: 0,
+        });
+        if (playback.playState === 'paused' && typeof playerRef.current.pauseVideo === 'function') {
+          playerRef.current.pauseVideo();
+        }
+      }
+    } catch (e) {
+      console.warn('Error changing video on player instance:', e);
+    }
+  }, [playback.videoId, isApiReady]);
 
   // Continuous timeline scrubber detection for Host & Moderator
   useEffect(() => {
@@ -199,18 +225,14 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
         const drift = Math.abs(playerTime - expectedTime);
 
-        // If drift is significant (> 1.8s) and not triggered internally, Host manually scrubbed YT timeline
-        if (drift > 1.8) {
-          isInternalStateChangeRef.current = true;
+        if (drift > 2.0) {
+          flagInternalStateChange(1200);
           onSeek(playerTime);
-          setTimeout(() => {
-            isInternalStateChangeRef.current = false;
-          }, 800);
         }
       } catch (e) {
         // ignore
       }
-    }, 400);
+    }, 500);
 
     return () => clearInterval(interval);
   }, [canControl, isApiReady, playback.currentTime, playback.playState, playback.lastStateUpdate, onSeek]);
@@ -226,7 +248,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       if (!isInternalStateChangeRef.current) {
         syncPlayerWithState(player);
       }
-    }, 500);
+    }, 600);
 
     return () => clearInterval(interval);
   }, [canControl, isApiReady, playback.playState, playback.currentTime, playback.lastStateUpdate]);
@@ -242,7 +264,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     if (!player || typeof player.getPlayerState !== 'function') return;
 
     try {
-      isInternalStateChangeRef.current = true;
+      flagInternalStateChange(2000);
 
       // 1. Calculate current target time
       let targetTime = playback.currentTime;
@@ -254,25 +276,20 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       const playerTime = player.getCurrentTime() || 0;
       const drift = Math.abs(playerTime - targetTime);
 
-      // 2. Adjust playback time if drift > 1.2s
-      if (drift > 1.2) {
+      // 2. Adjust playback time if drift > 1.5s
+      if (drift > 1.5 && typeof player.seekTo === 'function') {
         player.seekTo(targetTime, true);
       }
 
       // 3. Sync play/pause state
       const ytState = player.getPlayerState();
-      if (playback.playState === 'playing' && ytState !== 1) {
+      if (playback.playState === 'playing' && ytState !== 1 && typeof player.playVideo === 'function') {
         player.playVideo();
-      } else if (playback.playState === 'paused' && ytState !== 2) {
+      } else if (playback.playState === 'paused' && ytState !== 2 && typeof player.pauseVideo === 'function') {
         player.pauseVideo();
       }
-
-      setTimeout(() => {
-        isInternalStateChangeRef.current = false;
-      }, 500);
     } catch (e) {
       console.warn('Error syncing player with server state:', e);
-      isInternalStateChangeRef.current = false;
     }
   };
 
@@ -296,9 +313,24 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       {!canControl && (
         <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 text-xs text-gray-300">
           <ShieldAlert className="w-4 h-4 text-[#FF5400]" />
-          <span>Watch Only Mode (Host & Mods control playback)</span>
+          <span>Watch Only Mode</span>
         </div>
       )}
+
+      {/* Subtle Top-Right Paused Badge (non-blocking) */}
+      <AnimatePresence>
+        {playback.playState === 'paused' && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-3 right-3 z-20 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/90 backdrop-blur-md border border-amber-500/30 text-amber-400 font-semibold text-xs shadow-xl"
+          >
+            <Pause className="w-3.5 h-3.5 fill-current" />
+            <span>Paused by Host</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Floating Emoji Reactions Canvas */}
       <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
@@ -329,24 +361,6 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           })}
         </AnimatePresence>
       </div>
-
-      {/* Playback Status Overlay (when paused or buffering) */}
-      <AnimatePresence>
-        {playback.playState === 'paused' && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.2 }}
-            className="absolute inset-0 pointer-events-none bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-10"
-          >
-            <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-black/80 border border-white/15 text-xs font-bold text-gray-200 uppercase tracking-widest shadow-2xl backdrop-blur-md">
-              <Pause className="w-4 h-4 text-[#FF5400] fill-[#FF5400]" />
-              <span>PAUSED BY HOST</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };
