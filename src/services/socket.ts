@@ -5,7 +5,8 @@ let socket: Socket | null = null;
 
 export function getSocket(): Socket {
   if (!socket) {
-    socket = io(window.location.origin, {
+    const socketServerUrl = (import.meta as any).env?.VITE_SOCKET_URL || window.location.origin;
+    socket = io(socketServerUrl, {
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: 10,

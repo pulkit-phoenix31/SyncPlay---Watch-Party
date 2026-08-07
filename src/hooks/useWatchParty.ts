@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   getSocket,
   connectSocket,
@@ -364,74 +364,127 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     localStorage.removeItem(STORAGE_KEY);
   }, [roomCode]);
 
-  // Wrapped socket action triggers with active room checks and optimistic local updates
-  const activeRoomIdentifier = roomId || roomCode || initialRoomCode;
+  // Effective participants fallback: ensures current user (Host/Participant) is ALWAYS displayed in sidebar
+  const effectiveParticipants = useMemo(() => {
+    if (participants.length > 0) return participants;
+    if (currentUser) {
+      return [
+        {
+          userId: currentUser.userId,
+          username: currentUser.username,
+          role: currentUser.role,
+          isOnline: true,
+          socketId: null,
+          joinedAt: new Date(),
+        },
+      ];
+    }
+    return [];
+  }, [participants, currentUser]);
 
+  // REST API polling fallback for Vercel/serverless environments where WebSocket might be degraded
+  const activeRoomIdentifier = roomId || roomCode || initialRoomCode;
+  useEffect(() => {
+    if (!activeRoomIdentifier) return;
+
+    const pollRoomState = async () => {
+      try {
+        const res = await fetch(`/api/rooms/${activeRoomIdentifier}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.participants && Array.isArray(data.participants) && data.participants.length > 0) {
+          setParticipants(data.participants);
+        }
+        if (data && data.playback && data.playback.videoId) {
+          setPlayback((prev) => {
+            if (prev.videoId !== data.playback.videoId) {
+              return {
+                ...prev,
+                videoId: data.playback.videoId,
+                playState: data.playback.playState || prev.playState,
+                currentTime: data.playback.currentTime ?? prev.currentTime,
+                lastStateUpdate: Date.now(),
+              };
+            }
+            return prev;
+          });
+        }
+      } catch (e) {
+        // ignore REST polling failures
+      }
+    };
+
+    pollRoomState();
+    const interval = setInterval(pollRoomState, 3500);
+    return () => clearInterval(interval);
+  }, [activeRoomIdentifier]);
+
+  // Wrapped action triggers with optimistic local updates (works even on Vercel/serverless disconnected mode)
   const safePlay = useCallback(() => {
-    if (connectionStatus === 'connected' && activeRoomIdentifier) {
-      setPlayback((prev) => ({
-        ...prev,
-        playState: 'playing',
-        lastStateUpdate: Date.now(),
-      }));
+    setPlayback((prev) => ({
+      ...prev,
+      playState: 'playing',
+      lastStateUpdate: Date.now(),
+    }));
+    if (activeRoomIdentifier) {
       emitPlay();
     }
-  }, [connectionStatus, activeRoomIdentifier]);
+  }, [activeRoomIdentifier]);
 
   const safePause = useCallback(() => {
-    if (connectionStatus === 'connected' && activeRoomIdentifier) {
-      setPlayback((prev) => ({
-        ...prev,
-        playState: 'paused',
-        lastStateUpdate: Date.now(),
-      }));
+    setPlayback((prev) => ({
+      ...prev,
+      playState: 'paused',
+      lastStateUpdate: Date.now(),
+    }));
+    if (activeRoomIdentifier) {
       emitPause();
     }
-  }, [connectionStatus, activeRoomIdentifier]);
+  }, [activeRoomIdentifier]);
 
   const safeSeek = useCallback((time: number) => {
-    if (connectionStatus === 'connected' && activeRoomIdentifier) {
-      setPlayback((prev) => ({
-        ...prev,
-        currentTime: time,
-        lastStateUpdate: Date.now(),
-      }));
+    setPlayback((prev) => ({
+      ...prev,
+      currentTime: time,
+      lastStateUpdate: Date.now(),
+    }));
+    if (activeRoomIdentifier) {
       emitSeek(time);
     }
-  }, [connectionStatus, activeRoomIdentifier]);
+  }, [activeRoomIdentifier]);
 
   const safeChangeVideo = useCallback((videoId: string) => {
-    if (connectionStatus === 'connected' && activeRoomIdentifier) {
-      const cleanId = extractYouTubeId(videoId);
-      setPlayback((prev) => ({
-        ...prev,
-        videoId: cleanId,
-        currentTime: 0,
-        playState: 'playing',
-        lastStateUpdate: Date.now(),
-      }));
+    const cleanId = extractYouTubeId(videoId);
+    setPlayback((prev) => ({
+      ...prev,
+      videoId: cleanId,
+      currentTime: 0,
+      playState: 'playing',
+      lastStateUpdate: Date.now(),
+    }));
+    if (activeRoomIdentifier) {
       emitChangeVideo(cleanId);
     }
-  }, [connectionStatus, activeRoomIdentifier]);
+  }, [activeRoomIdentifier]);
 
   const safeSendMessage = useCallback((msg: string) => {
-    if (connectionStatus === 'connected' && activeRoomIdentifier) {
+    if (activeRoomIdentifier) {
       emitSendMessage(msg);
     }
-  }, [connectionStatus, activeRoomIdentifier]);
+  }, [activeRoomIdentifier]);
 
   const safeSendReaction = useCallback((emoji: string) => {
-    if (connectionStatus === 'connected' && activeRoomIdentifier) {
+    if (activeRoomIdentifier) {
       emitSendReaction(emoji);
     }
-  }, [connectionStatus, activeRoomIdentifier]);
+  }, [activeRoomIdentifier]);
 
   return {
     connectionStatus,
     roomId,
     roomCode,
     currentUser,
-    participants,
+    participants: effectiveParticipants,
     playback,
     messages,
     reactions,
