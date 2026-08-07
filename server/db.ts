@@ -17,7 +17,7 @@ if (process.env.NODE_ENV !== 'production') {
 // Initialize SQLite pragmas to prevent busy/locking errors and disk image corruption
 (async () => {
   try {
-    await prisma.$executeRawUnsafe('PRAGMA journal_mode = WAL;');
+    await prisma.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
     await prisma.$executeRawUnsafe('PRAGMA busy_timeout = 5000;');
     await prisma.$executeRawUnsafe('PRAGMA synchronous = NORMAL;');
   } catch (err) {
