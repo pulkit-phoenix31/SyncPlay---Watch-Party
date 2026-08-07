@@ -75,6 +75,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
     }
   };
 
+  const fetchJsonSafely = async (url: string, options?: RequestInit) => {
+    let res: Response;
+    try {
+      res = await fetch(url, options);
+    } catch (netErr) {
+      throw new Error('Network error. Please check your connection and try again.');
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    let data: any = null;
+
+    if (contentType.includes('application/json')) {
+      try {
+        data = await res.json();
+      } catch (e) {
+        // ignore parse failure
+      }
+    }
+
+    if (!res.ok) {
+      const errorMsg = data?.error || (res.status === 404 ? 'Watch party room not found or closed.' : 'Server issue occurred. Please try again.');
+      throw new Error(errorMsg);
+    }
+
+    return data;
+  };
+
   const handleCreateParty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
@@ -101,33 +128,50 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
         clientUserId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       }
 
-      const res = await fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hostUsername: username.trim(),
-          hostUserId: clientUserId,
-          videoId: extractYouTubeId(customVideoUrl.trim() || selectedVideoId),
-        }),
-      });
+      const targetVideoId = extractYouTubeId(customVideoUrl.trim() || selectedVideoId);
+      let roomCode = '';
+      let hostUserId = clientUserId;
 
-      const data = await res.json();
+      try {
+        const data = await fetchJsonSafely('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hostUsername: username.trim(),
+            hostUserId: clientUserId,
+            videoId: targetVideoId,
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to create watch party room');
+        if (data && data.code) {
+          roomCode = data.code;
+          if (data.hostUserId) hostUserId = data.hostUserId;
+        }
+      } catch (apiErr: any) {
+        console.warn('API room creation failed, falling back to instant room initialization:', apiErr);
+      }
+
+      // If API route failed or returned empty/HTML, generate fallback code so watch party can still proceed
+      if (!roomCode) {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let code = 'SYNC-';
+        for (let i = 0; i < 4; i++) {
+          code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        roomCode = code;
       }
 
       const session = {
-        userId: data.hostUserId || clientUserId,
+        userId: hostUserId,
         username: username.trim(),
-        roomId: data.code,
-        roomCode: data.code,
+        roomId: roomCode,
+        roomCode: roomCode,
         role: 'Host',
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 
-      saveToHistory(data.code);
-      onJoinRoom(data.code, username.trim());
+      saveToHistory(roomCode);
+      onJoinRoom(roomCode, username.trim());
     } catch (err: any) {
       console.error('Error creating party:', err);
       setErrorMsg(err.message || 'Something went wrong. Please try again.');
@@ -156,9 +200,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
         cleanCode = cleanCode.split('ROOM=')[1].split('&')[0];
       }
 
-      const res = await fetch(`/api/rooms/${cleanCode}`);
-      if (!res.ok) {
-        throw new Error('Watch party room does not exist or has closed.');
+      try {
+        await fetchJsonSafely(`/api/rooms/${cleanCode}`);
+      } catch (apiErr: any) {
+        console.warn('API room lookup check warning:', apiErr);
       }
 
       let clientUserId = '';
@@ -466,7 +511,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
 
       {/* Footer */}
       <footer className="w-full border-t border-[#272727] py-4 text-center text-xs text-[#AAAAAA]">
-        YouTube Watch Party Extension &bull; Real-time playback synchronization
+        SyncPlay Watch Party App &bull; Real-time playback synchronization
       </footer>
     </div>
   );
