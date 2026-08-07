@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # SyncTheater — Real-Time Synchronized YouTube Watch Party
 
 SyncTheater is a high-performance, production-grade YouTube Watch Party platform built with **React**, **TypeScript**, **Node.js / Express**, **Socket.IO**, and **SQLite via Prisma**. It enables synchronized video viewing, role-based access control, live chat, and emoji reactions.
@@ -169,3 +170,6 @@ Visit `http://localhost:3000` in your browser.
 
 1. **Browser Autoplay Restrictions**: Browsers block unmuted video autoplay if the user hasn't interacted with the page first. Users must click anywhere on the page upon entering the room to allow audio playback.
 2. **Single SQLite DB**: For multi-region server clusters, PostgreSQL should replace SQLite.
+=======
+# SyncPlay---Watch-Party
+>>>>>>> 984b499a5356e62aca6271b8969104bac1fd1320
