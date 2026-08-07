@@ -422,19 +422,28 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
         if (data && data.participants && Array.isArray(data.participants) && data.participants.length > 0) {
           setParticipants(data.participants);
         }
-        if (data && data.playback && data.playback.videoId) {
+
+        // Only override playback state via REST polling fallback if socket is disconnected or degraded
+        if (connectionStatus !== 'connected' && data && data.playback && data.playback.videoId) {
           setPlayback((prev) => {
+            let localTime = prev.currentTime || 0;
+            if (prev.playState === 'playing' && prev.lastStateUpdate) {
+              localTime += (Date.now() - prev.lastStateUpdate) / 1000;
+            }
+            const serverTime = data.playback.currentTime || 0;
+            const drift = Math.abs(localTime - serverTime);
+
             const hasChanged =
               prev.videoId !== data.playback.videoId ||
               prev.playState !== data.playback.playState ||
-              Math.abs(prev.currentTime - (data.playback.currentTime || 0)) > 2.5;
+              drift > 5.0;
 
             if (hasChanged) {
               return {
                 ...prev,
                 videoId: data.playback.videoId,
                 playState: data.playback.playState || prev.playState,
-                currentTime: data.playback.currentTime ?? prev.currentTime,
+                currentTime: serverTime,
                 lastStateUpdate: Date.now(),
               };
             }
@@ -447,9 +456,9 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     };
 
     pollRoomState();
-    const interval = setInterval(pollRoomState, 3500);
+    const interval = setInterval(pollRoomState, 5000);
     return () => clearInterval(interval);
-  }, [activeRoomIdentifier]);
+  }, [activeRoomIdentifier, connectionStatus]);
 
   const getCalculatedTime = useCallback((currentPlayback: PlaybackState) => {
     let time = currentPlayback.currentTime || 0;
