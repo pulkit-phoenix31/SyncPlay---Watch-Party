@@ -206,19 +206,21 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     flagInternalStateChange(4000);
 
     try {
-      if (typeof playerRef.current.loadVideoById === 'function') {
+      if (playback.playState === 'playing' && typeof playerRef.current.loadVideoById === 'function') {
         playerRef.current.loadVideoById({
           videoId: cleanVideoId,
           startSeconds: 0,
         });
-        if (playback.playState === 'paused' && typeof playerRef.current.pauseVideo === 'function') {
-          playerRef.current.pauseVideo();
-        }
+      } else if (typeof playerRef.current.cueVideoById === 'function') {
+        playerRef.current.cueVideoById({
+          videoId: cleanVideoId,
+          startSeconds: 0,
+        });
       }
     } catch (e) {
       console.warn('Error changing video on player instance:', e);
     }
-  }, [playback.videoId, isApiReady]);
+  }, [playback.videoId, isApiReady, playback.playState]);
 
   // Continuous timeline scrubber detection for Host & Moderator
   useEffect(() => {
@@ -231,7 +233,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       if (isInternalStateChangeRef.current) return;
 
       const ytState = player.getPlayerState();
-      if (ytState === -1 || ytState === 3 || ytState === 5) return;
+      if (ytState === 3) return;
 
       try {
         const playerTime = player.getCurrentTime() || 0;
@@ -284,8 +286,8 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
     try {
       const ytState = player.getPlayerState();
-      // Skip sync during video loading/buffering transitions (-1: UNSTARTED, 3: BUFFERING, 5: CUED)
-      if (ytState === -1 || ytState === 3 || ytState === 5) {
+      // Skip sync ONLY during active buffering (3)
+      if (ytState === 3) {
         return;
       }
 
@@ -298,19 +300,23 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         targetTime += elapsed;
       }
 
-      const playerTime = player.getCurrentTime() || 0;
+      const playerTime = typeof player.getCurrentTime === 'function' ? (player.getCurrentTime() || 0) : 0;
       const drift = Math.abs(playerTime - targetTime);
 
-      // 2. Adjust playback time if drift > 1.5s
-      if (drift > 1.5 && typeof player.seekTo === 'function') {
+      // 2. Adjust playback time if drift > 1.8s
+      if (drift > 1.8 && typeof player.seekTo === 'function') {
         player.seekTo(targetTime, true);
       }
 
       // 3. Sync play/pause state
-      if (playbackRef.current.playState === 'playing' && ytState !== 1 && typeof player.playVideo === 'function') {
-        player.playVideo();
-      } else if (playbackRef.current.playState === 'paused' && ytState !== 2 && typeof player.pauseVideo === 'function') {
-        player.pauseVideo();
+      if (playbackRef.current.playState === 'playing') {
+        if (ytState !== 1 && typeof player.playVideo === 'function') {
+          player.playVideo();
+        }
+      } else if (playbackRef.current.playState === 'paused') {
+        if (ytState !== 2 && typeof player.pauseVideo === 'function') {
+          player.pauseVideo();
+        }
       }
     } catch (e) {
       console.warn('Error syncing player with server state:', e);
