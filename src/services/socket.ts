@@ -43,15 +43,15 @@ export function emitLeaveRoom(roomId: string) {
   }
 }
 
-export function emitPlay() {
+export function emitPlay(time?: number) {
   if (socket) {
-    socket.emit('play', {});
+    socket.emit('play', { time });
   }
 }
 
-export function emitPause() {
+export function emitPause(time?: number) {
   if (socket) {
-    socket.emit('pause', {});
+    socket.emit('pause', { time });
   }
 }
 

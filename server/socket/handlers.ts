@@ -145,7 +145,7 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
         return sendError('Unauthorized: Only the Host or a Moderator can play the video.', 'FORBIDDEN');
       }
 
-      room.updatePlaybackState({ playState: 'playing' });
+      room.updatePlaybackState({ playState: 'playing', currentTime: parsed.data.time });
 
       io.to(room.id).emit('sync_state', room.getPlaybackState());
     } catch (err: any) {
@@ -170,7 +170,7 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
         return sendError('Unauthorized: Only the Host or a Moderator can pause the video.', 'FORBIDDEN');
       }
 
-      room.updatePlaybackState({ playState: 'paused' });
+      room.updatePlaybackState({ playState: 'paused', currentTime: parsed.data.time });
 
       io.to(room.id).emit('sync_state', room.getPlaybackState());
     } catch (err: any) {

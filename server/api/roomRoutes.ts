@@ -60,4 +60,20 @@ router.get('/:code', async (req, res) => {
   }
 });
 
+// DELETE /api/rooms/:code/participants/:userId - Remove participant from room
+router.delete('/:code/participants/:userId', async (req, res) => {
+  try {
+    const { code, userId } = req.params;
+    const roomManager = RoomManager.getInstance();
+    const room = await roomManager.getRoomAsync(code);
+    if (room) {
+      room.removeParticipant(userId);
+    }
+    return res.json({ status: 'ok' });
+  } catch (err: any) {
+    console.error('Error removing participant:', err);
+    return res.status(500).json({ error: 'Failed to remove participant' });
+  }
+});
+
 export default router;

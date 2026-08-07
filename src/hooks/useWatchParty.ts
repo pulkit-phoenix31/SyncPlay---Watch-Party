@@ -427,32 +427,34 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
   }, [activeRoomIdentifier]);
 
   // Wrapped action triggers with optimistic local updates (works even on Vercel/serverless disconnected mode)
-  const safePlay = useCallback(() => {
+  const safePlay = useCallback((time?: number) => {
     setPlayback((prev) => ({
       ...prev,
       playState: 'playing',
+      currentTime: time !== undefined ? Math.max(0, time) : prev.currentTime,
       lastStateUpdate: Date.now(),
     }));
     if (activeRoomIdentifier) {
-      emitPlay();
+      emitPlay(time);
     }
   }, [activeRoomIdentifier]);
 
-  const safePause = useCallback(() => {
+  const safePause = useCallback((time?: number) => {
     setPlayback((prev) => ({
       ...prev,
       playState: 'paused',
+      currentTime: time !== undefined ? Math.max(0, time) : prev.currentTime,
       lastStateUpdate: Date.now(),
     }));
     if (activeRoomIdentifier) {
-      emitPause();
+      emitPause(time);
     }
   }, [activeRoomIdentifier]);
 
   const safeSeek = useCallback((time: number) => {
     setPlayback((prev) => ({
       ...prev,
-      currentTime: time,
+      currentTime: Math.max(0, time),
       lastStateUpdate: Date.now(),
     }));
     if (activeRoomIdentifier) {
@@ -471,6 +473,16 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     }));
     if (activeRoomIdentifier) {
       emitChangeVideo(cleanId);
+    }
+  }, [activeRoomIdentifier]);
+
+  const safeRemoveParticipant = useCallback((targetUserId: string) => {
+    setParticipants((prev) => prev.filter((p) => p.userId !== targetUserId));
+    emitRemoveParticipant(targetUserId);
+    if (activeRoomIdentifier) {
+      fetch(`/api/rooms/${activeRoomIdentifier}/participants/${targetUserId}`, {
+        method: 'DELETE',
+      }).catch(() => {});
     }
   }, [activeRoomIdentifier]);
 
@@ -506,7 +518,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     seek: safeSeek,
     changeVideo: safeChangeVideo,
     assignRole: emitAssignRole,
-    removeParticipant: emitRemoveParticipant,
+    removeParticipant: safeRemoveParticipant,
     transferHost: emitTransferHost,
     sendMessage: safeSendMessage,
     sendReaction: safeSendReaction,

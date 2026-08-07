@@ -11,9 +11,13 @@ export const LeaveRoomSchema = z.object({
   roomId: z.string().min(1, 'Room ID is required'),
 });
 
-export const PlaySchema = z.object({});
+export const PlaySchema = z.object({
+  time: z.number().min(0, 'Time must be positive').optional(),
+});
 
-export const PauseSchema = z.object({});
+export const PauseSchema = z.object({
+  time: z.number().min(0, 'Time must be positive').optional(),
+});
 
 export const SeekSchema = z.object({
   time: z.number().min(0, 'Time must be positive'),

@@ -15,8 +15,8 @@ interface YouTubePlayerProps {
   playback: PlaybackState;
   userRole: Role;
   reactions: EmojiReactionData[];
-  onPlay: () => void;
-  onPause: () => void;
+  onPlay: (time?: number) => void;
+  onPause: (time?: number) => void;
   onSeek: (time: number) => void;
 }
 
@@ -165,9 +165,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
             // YT.PlayerState.PLAYING = 1, PAUSED = 2
             if (event.data === 1 && playbackRef.current.playState !== 'playing') {
-              onPlayRef.current();
+              onPlayRef.current(playerTime);
             } else if (event.data === 2 && playbackRef.current.playState !== 'paused') {
-              onPauseRef.current();
+              onPauseRef.current(playerTime);
             }
           } catch (e) {
             // ignore

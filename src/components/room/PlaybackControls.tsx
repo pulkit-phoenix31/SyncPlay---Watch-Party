@@ -20,8 +20,8 @@ import {
 interface PlaybackControlsProps {
   playback: PlaybackState;
   userRole: Role;
-  onPlay: () => void;
-  onPause: () => void;
+  onPlay: (time?: number) => void;
+  onPause: (time?: number) => void;
   onSeek: (time: number) => void;
   onChangeVideo: (videoId: string) => void;
   onSendReaction: (emoji: string) => void;
@@ -60,7 +60,13 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
           <motion.button
             whileHover={canControl ? { scale: 1.04 } : {}}
             whileTap={canControl ? { scale: 0.95 } : {}}
-            onClick={playback.playState === 'playing' ? onPause : onPlay}
+            onClick={() => {
+              if (playback.playState === 'playing') {
+                onPause(playback.currentTime);
+              } else {
+                onPlay(playback.currentTime);
+              }
+            }}
             disabled={!canControl}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm uppercase tracking-wider transition-all duration-200 ${
               canControl
