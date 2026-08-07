@@ -64,7 +64,7 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       const userId = rawUserId && rawUserId.trim() ? rawUserId.trim() : `user-${socket.id}`;
 
       if (!room || room.isClosed) {
-        room = await roomManager.createRoom(userId, username, videoId || 'L_LUpnjgPso', roomId);
+        room = await roomManager.createRoom(userId, username, videoId || 'uq169Z4RLKM', roomId);
       }
 
       // Add/reconnect participant to room OOP instance

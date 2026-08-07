@@ -25,7 +25,7 @@ export class Room {
     id: string,
     code: string,
     hostUserId: string,
-    videoId: string = 'L_LUpnjgPso',
+    videoId: string = 'uq169Z4RLKM',
     playState: PlayState = 'paused',
     currentTime: number = 0,
     lastStateUpdate: number = Date.now()

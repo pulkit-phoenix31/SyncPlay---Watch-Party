@@ -58,7 +58,7 @@ export class RoomManager {
       }
     }
 
-    const videoId = extractYouTubeId(initialVideoId || 'L_LUpnjgPso');
+    const videoId = extractYouTubeId(initialVideoId || 'uq169Z4RLKM');
     let roomId = requestedCodeOrId ? requestedCodeOrId.trim() : `room-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     try {

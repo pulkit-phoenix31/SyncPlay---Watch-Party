@@ -59,12 +59,15 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       const username = initialUsername?.trim() || existingSession?.username || `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
       const role: Role = isSameRoom ? (existingSession?.role || 'Participant') : (existingSession?.role || 'Participant');
 
+      const videoId = existingSession?.videoId || 'uq169Z4RLKM';
+
       const session = {
         userId,
         username,
         roomId: targetCode,
         roomCode: targetCode,
         role,
+        videoId,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
       return session;
@@ -93,7 +96,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
   const [participants, setParticipants] = useState<ParticipantData[]>([]);
   const [playback, setPlayback] = useState<PlaybackState>(() => {
     const session = getOrCreateSession();
-    const vid = session && (session as any).videoId ? extractYouTubeId((session as any).videoId) : 'L_LUpnjgPso';
+    const vid = session && (session as any).videoId ? extractYouTubeId((session as any).videoId) : 'uq169Z4RLKM';
     return {
       videoId: vid,
       playState: 'paused',

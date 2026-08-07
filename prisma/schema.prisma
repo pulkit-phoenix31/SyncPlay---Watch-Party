@@ -11,7 +11,7 @@ model Room {
   id              String        @id @default(uuid())
   code            String        @unique
   hostUserId      String
-  videoId         String        @default("L_LUpnjgPso")
+  videoId         String        @default("uq169Z4RLKM")
   playState       String        @default("paused")
   currentTime     Float         @default(0)
   lastStateUpdate DateTime      @default(now())

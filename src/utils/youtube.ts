@@ -2,7 +2,7 @@
  * Extracts an 11-character YouTube Video ID from various YouTube URL formats or standalone IDs.
  */
 export function extractYouTubeId(input: string): string {
-  const DEFAULT_ID = 'L_LUpnjgPso';
+  const DEFAULT_ID = 'uq169Z4RLKM';
   if (!input) return DEFAULT_ID;
   const trimmed = input.trim();
 

@@ -2,7 +2,7 @@
  * Utility to parse YouTube video ID from full URL or standalone ID
  */
 export function extractYouTubeId(input: string): string {
-  const DEFAULT_ID = 'L_LUpnjgPso';
+  const DEFAULT_ID = 'uq169Z4RLKM';
   if (!input) return DEFAULT_ID;
   const trimmed = input.trim();
 
