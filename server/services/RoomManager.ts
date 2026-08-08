@@ -235,7 +235,9 @@ export class RoomManager {
   }
 
   /**
-   * Handle socket disconnect
+   * Handle socket disconnect — marks participant offline (soft) so the
+   * host grace period can run correctly.
+   * Hard removal only happens on voluntary leave_room events.
    */
   public handleDisconnect(socketId: string): { room: Room; participant: Participant } | null {
     const mapping = this.getBySocketId(socketId);
@@ -245,12 +247,14 @@ export class RoomManager {
 
     const { room, userId } = mapping;
 
-    // Get a reference to the participant BEFORE removing them
+    // Get a reference to the participant BEFORE marking them offline
     const participant = room.participants.get(userId);
     if (!participant) return null;
 
-    // Fully remove from room so user_left broadcast reflects a clean list
-    room.removeParticipant(userId);
+    // Soft-disconnect: mark offline, preserve participant record.
+    // This allows the host grace period timer to fire if the Host disconnected,
+    // and prevents a spurious host-promotion when a duplicate tab closes.
+    room.handleParticipantDisconnect(userId);
 
     return { room, participant };
   }

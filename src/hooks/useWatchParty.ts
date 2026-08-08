@@ -26,6 +26,10 @@ import {
 import { extractYouTubeId } from '../utils/youtube.js';
 
 const STORAGE_KEY = 'yt_watch_party_user_session';
+// Tab-scoped key: each browser tab gets its own userId so that
+// opening a shared link in a new tab of the same browser does NOT
+// inherit the Host's userId from localStorage.
+const SESSION_TAB_KEY = 'yt_watch_party_tab_session';
 
 interface UserSession {
   userId: string;
@@ -40,40 +44,50 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
   const [roomCode, setRoomCode] = useState<string | null>(initialRoomCode || null);
   const [hostUserId, setHostUserId] = useState<string | null>(null);
 
-  // Helper to ensure user session is initialized in localStorage
+  // Helper to ensure user session is initialized.
+  // - userId is stored in sessionStorage (tab-scoped) so that each browser
+  //   tab gets a unique identity, preventing a second tab from inheriting
+  //   the Host's userId via shared localStorage.
+  // - username, roomCode, videoId remain in localStorage for UX convenience
+  //   (pre-filling the form when the user opens a new tab intentionally).
   const getOrCreateSession = useCallback(() => {
     const targetCode = (initialRoomCode || roomCode || '').toUpperCase();
-    let existingSession: any = null;
+
+    // --- localStorage: shared prefs (username, videoId) ---
+    let sharedPrefs: any = null;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        existingSession = JSON.parse(saved);
-      }
-    } catch (e) {
-      // ignore
-    }
+      if (saved) sharedPrefs = JSON.parse(saved);
+    } catch (e) { /* ignore */ }
+
+    // --- sessionStorage: tab-scoped identity (userId) ---
+    let tabSession: any = null;
+    try {
+      const saved = sessionStorage.getItem(SESSION_TAB_KEY);
+      if (saved) tabSession = JSON.parse(saved);
+    } catch (e) { /* ignore */ }
 
     if (targetCode) {
-      const isSameRoom = existingSession?.roomCode?.toUpperCase() === targetCode || existingSession?.roomId?.toUpperCase() === targetCode;
-      const userId = existingSession?.userId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const username = initialUsername?.trim() || existingSession?.username || `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
-      const role: Role = isSameRoom ? (existingSession?.role || 'Participant') : (existingSession?.role || 'Participant');
+      // Generate a fresh userId for this tab if none exists in sessionStorage
+      const userId = tabSession?.userId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const username = initialUsername?.trim() || sharedPrefs?.username || `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
+      const role: Role = tabSession?.role || 'Participant';
+      const videoId = sharedPrefs?.videoId || 'uq169Z4RLKM';
 
-      const videoId = existingSession?.videoId || 'uq169Z4RLKM';
+      // Persist tab identity to sessionStorage
+      const newTabSession = { userId, role, roomCode: targetCode };
+      try { sessionStorage.setItem(SESSION_TAB_KEY, JSON.stringify(newTabSession)); } catch (e) { /* ignore */ }
 
-      const session = {
-        userId,
-        username,
-        roomId: targetCode,
-        roomCode: targetCode,
-        role,
-        videoId,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-      return session;
+      // Persist shared prefs to localStorage
+      const newSharedPrefs = { ...sharedPrefs, username, videoId, roomId: targetCode, roomCode: targetCode };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newSharedPrefs)); } catch (e) { /* ignore */ }
+
+      return { userId, username, roomId: targetCode, roomCode: targetCode, role, videoId };
     }
 
-    return existingSession;
+    // Fallback: no room code — compose from both stores
+    const userId = tabSession?.userId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    return sharedPrefs ? { ...sharedPrefs, userId, role: tabSession?.role || 'Participant' } : null;
   }, [initialRoomCode, initialUsername, roomCode]);
 
   // Current user info
@@ -120,21 +134,26 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Sync currentUser changes (e.g. role) to localStorage
+  // Sync currentUser changes (role) to sessionStorage (tab-scoped)
   useEffect(() => {
     if (currentUser) {
+      try {
+        const saved = sessionStorage.getItem(SESSION_TAB_KEY);
+        const parsed = saved ? JSON.parse(saved) : {};
+        parsed.role = currentUser.role;
+        parsed.userId = currentUser.userId;
+        sessionStorage.setItem(SESSION_TAB_KEY, JSON.stringify(parsed));
+      } catch (e) { /* ignore */ }
+
+      // Also keep username synced in localStorage for form pre-fill
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          parsed.role = currentUser.role;
-          parsed.userId = currentUser.userId;
           parsed.username = currentUser.username;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
         }
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) { /* ignore */ }
     }
   }, [currentUser]);
 
@@ -358,15 +377,24 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     const cleanCode = targetCode.trim().toUpperCase();
     const cleanUsername = username.trim();
 
-    const storedUserId = currentUser?.userId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    // userId is always sourced from sessionStorage (tab-scoped)
+    let storedUserId = currentUser?.userId;
+    if (!storedUserId) {
+      try {
+        const saved = sessionStorage.getItem(SESSION_TAB_KEY);
+        storedUserId = saved ? JSON.parse(saved).userId : undefined;
+      } catch (e) { /* ignore */ }
+    }
+    storedUserId = storedUserId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
-    const session: UserSession = {
-      userId: storedUserId,
-      username: cleanUsername,
-      roomId: cleanCode,
-      roomCode: cleanCode,
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    // Persist tab-scoped identity
+    try {
+      sessionStorage.setItem(SESSION_TAB_KEY, JSON.stringify({ userId: storedUserId, role: 'Participant', roomCode: cleanCode }));
+    } catch (e) { /* ignore */ }
+
+    // Persist shared prefs (username, roomCode) to localStorage
+    const sharedPrefs = { username: cleanUsername, roomId: cleanCode, roomCode: cleanCode };
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sharedPrefs)); } catch (e) { /* ignore */ }
 
     setCurrentUser({
       userId: storedUserId,
@@ -388,7 +416,9 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     setCurrentUser(null);
     setParticipants([]);
     setMessages([]);
-    localStorage.removeItem(STORAGE_KEY);
+    // Clear both storages on voluntary leave
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(SESSION_TAB_KEY); } catch (e) { /* ignore */ }
   }, [roomCode]);
 
   // Effective participants fallback: ensures current user (Host/Participant) is ALWAYS displayed in sidebar

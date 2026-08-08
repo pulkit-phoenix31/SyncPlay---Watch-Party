@@ -96,13 +96,22 @@ export class Room {
       finalUsername = `${username.trim()} (${collisionCount})`;
     }
 
-    // Determine role: if first participant, matches hostUserId, or no active host, Host; else Participant or requestedRole
+    // Determine role:
+    // - If the joining userId matches the room's stored hostUserId → Host (original host reconnecting)
+    // - If the room has zero participant records at all (brand new room) → Host
+    // - Otherwise → Participant (or requestedRole)
+    //
+    // NOTE: We deliberately do NOT grant Host when !hasHost but participants.size > 0.
+    // That case (all offline after DB restore) should be resolved by the host grace
+    // period timer, not by auto-promoting the first person who happens to connect.
     let assignedRole: Role = requestedRole || 'Participant';
-    const hasHost = Array.from(this.participants.values()).some((p) => p.role === 'Host');
 
-    const isHostUser = Boolean(userId && this.hostUserId && userId.trim().toLowerCase() === this.hostUserId.trim().toLowerCase());
+    const isHostUser = Boolean(
+      userId && this.hostUserId &&
+      userId.trim().toLowerCase() === this.hostUserId.trim().toLowerCase()
+    );
 
-    if (isHostUser || this.participants.size === 0 || !hasHost) {
+    if (isHostUser || this.participants.size === 0) {
       assignedRole = 'Host';
       this.hostUserId = userId;
     }
