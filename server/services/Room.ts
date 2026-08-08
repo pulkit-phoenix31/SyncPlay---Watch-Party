@@ -349,6 +349,7 @@ export class Room {
       playState: this.playState,
       currentTime: this.getCurrentCalculatedTime(),
       lastStateUpdate: now,
+      serverTime: now,
       participants: this.getParticipantsList(),
     };
   }

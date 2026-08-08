@@ -18,6 +18,12 @@ export interface PlaybackState {
   playState: PlayState;
   currentTime: number;
   lastStateUpdate: number;
+  /**
+   * Server wall-clock timestamp (ms) at the moment this state was emitted.
+   * Clients subtract their local Date.now() from this to estimate one-way
+   * network latency and compensate seek targets accordingly.
+   */
+  serverTime?: number;
 }
 
 export interface ChatMessageData {

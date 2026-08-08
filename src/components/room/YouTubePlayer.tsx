@@ -20,6 +20,19 @@ interface YouTubePlayerProps {
   onSeek: (time: number) => void;
 }
 
+// ─── Sync constants ───────────────────────────────────────────────────────────
+/** How often (ms) participants' playback position is checked and corrected. */
+const PARTICIPANT_SYNC_INTERVAL_MS = 200;
+/** How often (ms) the host's scrubbed-timeline is detected and broadcast. */
+const HOST_SCRUB_POLL_INTERVAL_MS  = 500;
+/** Drift (seconds) before a participant is force-seeked to the correct position. */
+const PARTICIPANT_DRIFT_THRESHOLD  = 0.5;
+/** Drift (seconds) before a host scrub is considered intentional and broadcast. */
+const HOST_SCRUB_THRESHOLD         = 1.0;
+/** How long (ms) to suppress echo-loop re-handling after a programmatic state change. */
+const INTERNAL_CHANGE_SUPPRESS_MS  = 500;
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
   playback,
   userRole,
@@ -33,6 +46,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
   const [isApiReady, setIsApiReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const isInternalStateChangeRef = useRef(false);
+  const suppressUntilRef = useRef<number>(0);
 
   const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
 
@@ -55,16 +69,42 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
   onSeekRef.current = onSeek;
 
   const loadedVideoIdRef = useRef<string | null>(null);
-  const syncTimeoutRef = useRef<any>(null);
 
-  const flagInternalStateChange = (durationMs = 600) => {
+  /**
+   * Mark the next N ms as "internal change" so the onStateChange handler
+   * ignores YT events that were triggered by our own seekTo/playVideo/pauseVideo.
+   */
+  const flagInternalStateChange = (durationMs = INTERNAL_CHANGE_SUPPRESS_MS) => {
+    suppressUntilRef.current = Date.now() + durationMs;
     isInternalStateChangeRef.current = true;
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
+    setTimeout(() => {
+      if (Date.now() >= suppressUntilRef.current) {
+        isInternalStateChangeRef.current = false;
+      }
+    }, durationMs + 50);
+  };
+
+  /**
+   * Calculate the "ground truth" playback position right now, compensating
+   * for network latency using the serverTime stamp embedded in playback state.
+   *
+   * Formula:
+   *   latency ≈ Date.now() - serverTime   (one-way estimate, assumes symmetric)
+   *   calculatedTime = storedTime + elapsed + latency
+   *
+   * For paused state, we only apply the latency offset (server processed the
+   * pause at serverTime, so the correct position is exactly storedTime).
+   */
+  const getTargetTime = (pb: PlaybackState): number => {
+    const now = Date.now();
+    const latencyMs = pb.serverTime ? Math.max(0, now - pb.serverTime) : 0;
+
+    if (pb.playState === 'playing') {
+      const elapsedSinceUpdate = (now - pb.lastStateUpdate) / 1000;
+      return Math.max(0, pb.currentTime + elapsedSinceUpdate);
     }
-    syncTimeoutRef.current = setTimeout(() => {
-      isInternalStateChangeRef.current = false;
-    }, durationMs);
+    // Paused: add latency so we land on the exact frame the host paused at
+    return Math.max(0, pb.currentTime + latencyMs / 1000);
   };
 
   // Load YouTube IFrame API
@@ -122,12 +162,22 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
       },
       events: {
         onReady: (event: any) => {
-          flagInternalStateChange(1000);
-          syncPlayerWithState(event.target);
+          // Suppress echo from the initial seek/play we're about to issue
+          flagInternalStateChange(1500);
+          // Seek to the latency-compensated position immediately on ready
+          const target = getTargetTime(playbackRef.current);
+          try {
+            event.target.seekTo(target, true);
+            if (playbackRef.current.playState === 'playing') {
+              event.target.playVideo();
+            }
+          } catch (e) { /* ignore */ }
         },
+
         onStateChange: (event: any) => {
-          // Prevent echo loop when update was triggered programmatically from server
+          // Suppress echo for programmatic changes
           if (isInternalStateChangeRef.current) {
+            // Clear flag early if state matches what we intended
             if (
               (event.data === 1 && playbackRef.current.playState === 'playing') ||
               (event.data === 2 && playbackRef.current.playState === 'paused')
@@ -137,54 +187,53 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             return;
           }
 
-          if (event.data === 1) {
-            setIsAutoplayBlocked(false);
-          }
-
-          if (!canControlRef.current) {
-            // Participant tried to play, pause or scrub via YouTube iframe controls
-            const player = event.target;
-            if (player) {
-              syncPlayerWithState(player);
-            }
-            return;
-          }
+          if (event.data === 1) setIsAutoplayBlocked(false);
 
           const player = event.target;
           if (!player || typeof player.getCurrentTime !== 'function') return;
 
           try {
             const playerTime = player.getCurrentTime() || 0;
-            let expectedTime = playbackRef.current.currentTime;
-            if (playbackRef.current.playState === 'playing') {
-              const elapsed = (Date.now() - playbackRef.current.lastStateUpdate) / 1000;
-              expectedTime += elapsed;
+            const targetTime = getTargetTime(playbackRef.current);
+
+            if (!canControlRef.current) {
+              // ── Participant ──────────────────────────────────────────────
+              // After buffering ends (state 1 = playing), immediately correct position
+              if (event.data === 1) {
+                const drift = Math.abs(playerTime - targetTime);
+                if (drift > PARTICIPANT_DRIFT_THRESHOLD) {
+                  flagInternalStateChange();
+                  player.seekTo(targetTime, true);
+                }
+              }
+              // Participant tried to interact — revert
+              syncPlayerWithState(player);
+              return;
             }
 
-            const drift = Math.abs(playerTime - expectedTime);
+            // ── Host / Moderator ─────────────────────────────────────────
+            const drift = Math.abs(playerTime - targetTime);
 
-            // Detect if Host/Moderator skipped/scrubbed on YouTube native timeline
-            if (drift > 1.2) {
-              flagInternalStateChange(600);
+            // Detect intentional scrub via native YT timeline
+            if (drift > HOST_SCRUB_THRESHOLD) {
+              flagInternalStateChange();
               onSeekRef.current(playerTime);
             }
 
-            // YT.PlayerState.PLAYING = 1, PAUSED = 2
             if (event.data === 1 && playbackRef.current.playState !== 'playing') {
-              onPlayRef.current(playerTime > 0.1 ? playerTime : expectedTime);
+              onPlayRef.current(playerTime > 0.1 ? playerTime : targetTime);
             } else if (event.data === 2 && playbackRef.current.playState !== 'paused') {
-              // If YouTube iframe paused at ~0s while room expected time was > 1s, it's a browser/iframe glitch.
-              if (playerTime < 0.5 && expectedTime > 1.0) {
+              // Guard: reject spurious pause at 0s when room is well into the video
+              if (playerTime < 0.5 && targetTime > 1.0) {
                 syncPlayerWithState(player);
               } else {
-                const pauseTime = playerTime > 0.5 ? playerTime : expectedTime;
+                const pauseTime = playerTime > 0.5 ? playerTime : targetTime;
                 onPauseRef.current(pauseTime);
               }
             }
-          } catch (e) {
-            // ignore
-          }
+          } catch (e) { /* ignore */ }
         },
+
         onError: (event: any) => {
           console.error('YouTube Player Error code:', event.data);
           setPlayerError('This YouTube video cannot be embedded or played. Please try another YouTube video URL.');
@@ -198,9 +247,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
           if (typeof playerRef.current.destroy === 'function') {
             playerRef.current.destroy();
           }
-        } catch (e) {
-          // ignore
-        }
+        } catch (e) { /* ignore */ }
         playerRef.current = null;
       }
     };
@@ -220,76 +267,98 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
     try {
       if (playback.playState === 'playing' && typeof playerRef.current.loadVideoById === 'function') {
-        playerRef.current.loadVideoById({
-          videoId: cleanVideoId,
-          startSeconds: 0,
-        });
+        playerRef.current.loadVideoById({ videoId: cleanVideoId, startSeconds: 0 });
       } else if (typeof playerRef.current.cueVideoById === 'function') {
-        playerRef.current.cueVideoById({
-          videoId: cleanVideoId,
-          startSeconds: 0,
-        });
+        playerRef.current.cueVideoById({ videoId: cleanVideoId, startSeconds: 0 });
       }
     } catch (e) {
       console.warn('Error changing video on player instance:', e);
     }
   }, [playback.videoId, isApiReady, playback.playState]);
 
-  // Continuous timeline scrubber detection for Host & Moderator
+  // ── Host scrub detection loop ─────────────────────────────────────────────
+  // Polls every 500ms to detect when the Host scrubs the native YT timeline.
+  // Fires a seek event when drift > HOST_SCRUB_THRESHOLD so participants sync.
   useEffect(() => {
     if (!canControl || !isApiReady) return;
 
     const interval = setInterval(() => {
       const player = playerRef.current;
       if (!player || typeof player.getCurrentTime !== 'function' || typeof player.getPlayerState !== 'function') return;
-
       if (isInternalStateChangeRef.current) return;
 
       const ytState = player.getPlayerState();
-      // Ignore during buffering (3) or paused (2)
+      // Skip during buffering (3) or paused (2) — only care about playing drift
       if (ytState === 3 || ytState === 2) return;
 
       try {
         const playerTime = player.getCurrentTime() || 0;
+        const targetTime = getTargetTime(playbackRef.current);
+        const drift = Math.abs(playerTime - targetTime);
 
-        let expectedTime = playback.currentTime;
-        if (playback.playState === 'playing') {
-          const elapsed = (Date.now() - playback.lastStateUpdate) / 1000;
-          expectedTime += elapsed;
+        if (drift > HOST_SCRUB_THRESHOLD) {
+          flagInternalStateChange();
+          onSeekRef.current(playerTime);
         }
-
-        const drift = Math.abs(playerTime - expectedTime);
-
-        if (drift > 2.5) {
-          flagInternalStateChange(600);
-          onSeek(playerTime);
-        }
-      } catch (e) {
-        // ignore
-      }
-    }, 1000);
+      } catch (e) { /* ignore */ }
+    }, HOST_SCRUB_POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [canControl, isApiReady, playback.currentTime, playback.playState, playback.lastStateUpdate, onSeek]);
+  }, [canControl, isApiReady]);
 
-  // Continuous lock enforcement for Participants (disallows local pause/seek/play deviations)
+  // ── Participant tight-sync loop ───────────────────────────────────────────
+  // Runs every 200ms for participants only.
+  // Corrects drift > 0.5s, enforces play/pause state, handles post-buffer catch-up.
   useEffect(() => {
     if (canControl || !isApiReady) return;
 
     const interval = setInterval(() => {
       const player = playerRef.current;
       if (!player || typeof player.getPlayerState !== 'function') return;
+      if (isInternalStateChangeRef.current) return;
 
-      syncPlayerWithState(player);
-    }, 600);
+      try {
+        const ytState = player.getPlayerState();
+        const targetTime = getTargetTime(playbackRef.current);
+
+        // ── Play/pause enforcement ──
+        if (playbackRef.current.playState === 'playing') {
+          if (ytState === 2 /* paused */ || ytState === -1 /* unstarted */) {
+            flagInternalStateChange();
+            player.playVideo();
+          }
+        } else if (playbackRef.current.playState === 'paused') {
+          if (ytState === 1 /* playing */) {
+            flagInternalStateChange();
+            player.pauseVideo();
+            // Also correct position when we pause
+            const playerTime = player.getCurrentTime() || 0;
+            if (Math.abs(playerTime - targetTime) > PARTICIPANT_DRIFT_THRESHOLD) {
+              player.seekTo(targetTime, true);
+            }
+          }
+        }
+
+        // ── Position correction (not during active buffering) ──
+        if (ytState !== 3 && playbackRef.current.playState === 'playing') {
+          const playerTime = typeof player.getCurrentTime === 'function' ? (player.getCurrentTime() || 0) : 0;
+          const drift = Math.abs(playerTime - targetTime);
+
+          if (drift > PARTICIPANT_DRIFT_THRESHOLD) {
+            flagInternalStateChange();
+            player.seekTo(targetTime, true);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }, PARTICIPANT_SYNC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [canControl, isApiReady, playback.playState, playback.currentTime, playback.lastStateUpdate]);
+  }, [canControl, isApiReady]);
 
-  // Sync player whenever server playback state changes
+  // ── Sync player whenever server playback state changes ───────────────────
+  // Fires immediately on every sync_state push from the server.
   useEffect(() => {
     if (!playerRef.current || typeof playerRef.current.getPlayerState !== 'function') return;
-
     syncPlayerWithState(playerRef.current);
   }, [playback.playState, playback.currentTime, playback.lastStateUpdate, playback.videoId]);
 
@@ -298,38 +367,29 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
 
     try {
       const ytState = player.getPlayerState();
-      // Skip sync ONLY during active buffering (3)
-      if (ytState === 3) {
-        return;
-      }
+      // Skip sync during active buffering — let the post-buffer onStateChange handle catch-up
+      if (ytState === 3) return;
 
-      // 1. Calculate current target time
-      let targetTime = playbackRef.current.currentTime;
-      if (playbackRef.current.playState === 'playing') {
-        const elapsed = (Date.now() - playbackRef.current.lastStateUpdate) / 1000;
-        targetTime += elapsed;
-      }
-
+      const targetTime = getTargetTime(playbackRef.current);
       const playerTime = typeof player.getCurrentTime === 'function' ? (player.getCurrentTime() || 0) : 0;
       const drift = Math.abs(playerTime - targetTime);
 
-      // 2. Host is the master source — never force Host's smooth playing player to seek!
-      // Participants adjust playback time if drift > 2.0s
-      if (!canControlRef.current && drift > 2.0 && typeof player.seekTo === 'function') {
-        flagInternalStateChange(500);
+      // Only seek if actually drifted — avoids constant micro-stutters from spurious seeks
+      if (drift > PARTICIPANT_DRIFT_THRESHOLD && !canControlRef.current) {
+        flagInternalStateChange();
         player.seekTo(targetTime, true);
       }
 
-      // 3. Sync play/pause state
+      // Sync play/pause state
       if (playbackRef.current.playState === 'playing') {
         if (ytState !== 1 && typeof player.playVideo === 'function') {
-          flagInternalStateChange(500);
+          flagInternalStateChange();
           player.playVideo();
-          // Check if autoplay was blocked by browser
+          // Detect autoplay block
           setTimeout(() => {
             if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
-              const currentSt = playerRef.current.getPlayerState();
-              if (currentSt !== 1 && currentSt !== 3 && playbackRef.current.playState === 'playing') {
+              const st = playerRef.current.getPlayerState();
+              if (st !== 1 && st !== 3 && playbackRef.current.playState === 'playing') {
                 setIsAutoplayBlocked(true);
               }
             }
@@ -337,7 +397,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
         }
       } else if (playbackRef.current.playState === 'paused') {
         if (ytState !== 2 && typeof player.pauseVideo === 'function') {
-          flagInternalStateChange(500);
+          flagInternalStateChange();
           player.pauseVideo();
         }
       }
@@ -369,6 +429,9 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
             if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
               try {
                 if (typeof playerRef.current.unMute === 'function') playerRef.current.unMute();
+                // Seek to the correct sync position before unblocking
+                const target = getTargetTime(playbackRef.current);
+                playerRef.current.seekTo(target, true);
                 playerRef.current.playVideo();
               } catch (e) {}
             }
