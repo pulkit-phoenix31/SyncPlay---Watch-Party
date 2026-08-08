@@ -98,12 +98,11 @@ export class Room {
 
     // Determine role:
     // - If the joining userId matches the room's stored hostUserId → Host (original host reconnecting)
-    // - If the room has zero participant records at all (brand new room) → Host
+    // - If no participant records exist (brand new room) → Host
+    // - If the room is fully offline / abandoned (no one currently online) → Host
+    //   (soft-disconnect means participants.size never drops to 0 after first join, so we
+    //    use the "online" count as the signal for an abandoned room instead)
     // - Otherwise → Participant (or requestedRole)
-    //
-    // NOTE: We deliberately do NOT grant Host when !hasHost but participants.size > 0.
-    // That case (all offline after DB restore) should be resolved by the host grace
-    // period timer, not by auto-promoting the first person who happens to connect.
     let assignedRole: Role = requestedRole || 'Participant';
 
     const isHostUser = Boolean(
@@ -111,9 +110,30 @@ export class Room {
       userId.trim().toLowerCase() === this.hostUserId.trim().toLowerCase()
     );
 
-    if (isHostUser || this.participants.size === 0) {
+    // "effectively empty" = everyone is offline (soft-disconnected)
+    const hasOnlineParticipant = Array.from(this.participants.values()).some((p) => p.isOnline);
+
+    if (isHostUser || this.participants.size === 0 || !hasOnlineParticipant) {
       assignedRole = 'Host';
+
+      // For abandoned-room takeover: demote stale Host records to Moderator so
+      // there is never more than one participant with the Host role.
+      if (!isHostUser && this.participants.size > 0) {
+        for (const p of this.participants.values()) {
+          if (p.role === 'Host') {
+            p.setRole('Moderator');
+            this.syncParticipantToDB(p);
+          }
+        }
+      }
+
       this.hostUserId = userId;
+
+      // Cancel any running grace timer — a new Host is now active
+      if (this.hostGraceTimer) {
+        clearTimeout(this.hostGraceTimer);
+        this.hostGraceTimer = null;
+      }
     }
 
     const newParticipant = new Participant(userId, finalUsername, assignedRole, socketId, true);
