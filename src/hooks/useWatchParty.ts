@@ -69,12 +69,13 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       const userId = sharedPrefs?.userId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const username = initialUsername?.trim() || sharedPrefs?.username || `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
       const videoId = sharedPrefs?.videoId || 'uq169Z4RLKM';
+      const role: Role = sharedPrefs?.role || 'Participant';
 
-      // Persist everything (including userId) back to localStorage
-      const newPrefs = { ...sharedPrefs, userId, username, videoId, roomId: targetCode, roomCode: targetCode };
+      // Persist everything (including userId and role) back to localStorage
+      const newPrefs = { ...sharedPrefs, userId, username, videoId, roomId: targetCode, roomCode: targetCode, role };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs)); } catch (e) { /* ignore */ }
 
-      return { userId, username, roomId: targetCode, roomCode: targetCode, videoId };
+      return { userId, username, roomId: targetCode, roomCode: targetCode, videoId, role };
     }
 
     // Fallback: no room code yet
@@ -97,7 +98,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       return {
         userId: session.userId,
         username: session.username,
-        role: (session as any).role || 'Participant',
+        role: session.role || 'Participant',
       };
     }
     return null;
@@ -130,7 +131,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Sync currentUser changes (username, userId) to localStorage so all tabs stay in sync
+  // Sync currentUser changes (username, userId, role) to localStorage so all tabs stay in sync
   useEffect(() => {
     if (currentUser) {
       try {
@@ -138,6 +139,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
         const parsed = saved ? JSON.parse(saved) : {};
         parsed.userId = currentUser.userId;
         parsed.username = currentUser.username;
+        parsed.role = currentUser.role;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       } catch (e) { /* ignore */ }
     }
@@ -146,12 +148,14 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
   // Update current user's role whenever participants list changes
   useEffect(() => {
     if (currentUser?.userId && participants.length > 0) {
-      const me = participants.find((p) => p.userId === currentUser.userId);
+      const me = participants.find(
+        (p) => p.userId.trim().toLowerCase() === currentUser.userId.trim().toLowerCase()
+      );
       if (me && me.role !== currentUser.role) {
         setCurrentUser((prev) => (prev ? { ...prev, role: me.role } : null));
       }
     }
-  }, [participants, currentUser?.userId]);
+  }, [participants, currentUser?.userId, currentUser?.role]);
 
   // Keep a ref to currentUser.userId to avoid re-subscribing socket listeners on every user state change
   const currentUserIdRef = useRef<string | null>(currentUser?.userId || null);
@@ -197,6 +201,15 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       setPlayback(newPlayback);
       if (Array.isArray(newPlayback.participants)) {
         setParticipants(newPlayback.participants);
+        const myId = currentUserIdRef.current;
+        if (myId) {
+          const me = newPlayback.participants.find(
+            (p) => p.userId.trim().toLowerCase() === myId.trim().toLowerCase()
+          );
+          if (me) {
+            setCurrentUser((prev) => (prev ? { ...prev, role: me.role } : null));
+          }
+        }
       }
       setRoomId((prev) => prev || roomCode || initialRoomCode || 'active');
 
