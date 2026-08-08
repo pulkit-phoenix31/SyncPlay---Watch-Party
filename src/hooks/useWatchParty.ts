@@ -374,9 +374,14 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     storedUserId = storedUserId || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
     // Persist userId, username and roomCode to localStorage (shared across tabs in this browser)
+    // Read any role already stored (e.g. 'Host' set by handleCreateParty before this call)
+    let storedRole: Role = 'Participant';
     try {
       const existing = localStorage.getItem(STORAGE_KEY);
       const parsed = existing ? JSON.parse(existing) : {};
+      if (parsed.role === 'Host' || parsed.role === 'Moderator') {
+        storedRole = parsed.role as Role;
+      }
       const newPrefs = { ...parsed, userId: storedUserId, username: cleanUsername, roomId: cleanCode, roomCode: cleanCode };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
     } catch (e) { /* ignore */ }
@@ -384,7 +389,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     setCurrentUser({
       userId: storedUserId,
       username: cleanUsername,
-      role: 'Participant',
+      role: storedRole,
     });
     setRoomCode(cleanCode);
 
