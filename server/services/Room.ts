@@ -141,6 +141,16 @@ export class Room {
    * @param externalSocketCheck - Optional callback from RoomManager that cross-checks
    *                              the authoritative socket registry (socketToRoomParticipant).
    *                              Returns true if the userId still has other active sockets.
+   *                              Used as a second guard in case the in-memory Set gets out of sync  /**
+   * Mark a specific socket for a participant as disconnected.
+   * The participant only goes "offline" when ALL their sockets (tabs) are closed.
+   * Triggers host promotion grace period only when the host has zero remaining sockets.
+   *
+   * @param userId              - The participant's persistent user ID
+   * @param socketId            - The specific socket (browser tab) that disconnected
+   * @param externalSocketCheck - Optional callback from RoomManager that cross-checks
+   *                              the authoritative socket registry (socketToRoomParticipant).
+   *                              Returns true if the userId still has other active sockets.
    *                              Used as a second guard in case the in-memory Set gets out of sync.
    */
   public handleParticipantDisconnect(
@@ -157,12 +167,10 @@ export class Room {
 
     // Step 2: Query authoritative global registry for any active remaining sockets
     const activeSockets = getActiveSockets ? getActiveSockets() : [];
-    const hasExternalSockets = externalSocketCheck
-      ? externalSocketCheck()
-      : activeSockets.length > 0;
+    const hasExternalSockets = activeSockets.length > 0 || (externalSocketCheck ? externalSocketCheck() : false);
 
     // Step 3: Crucial fix for onlineCount & online status!
-    // If the global registry confirms active sockets still exist (e.g. Tab B),
+    // If the global registry confirms active sockets still exist for this user (e.g. Tab B),
     // ensure participant.socketIds contains those live sockets so participant.isOnline
     // remains TRUE (size > 0), avoiding false "0 connected" / "Host Offline" UI status.
     if (hasExternalSockets) {
@@ -178,8 +186,7 @@ export class Room {
     if (wasFullyOffline) {
       this.syncParticipantToDB(participant);
 
-      // If host has no more sockets anywhere, start grace period for potential promotion.
-      // Pass externalSocketCheck so the timer can re-verify before promoting.
+      // ONLY start host grace period if the Host user has ZERO active sockets anywhere!
       if (userId === this.hostUserId) {
         this.startHostGracePeriod(externalSocketCheck);
       }
@@ -193,7 +200,6 @@ export class Room {
 
     return { participant, wasFullyOffline };
   }
-
 
   /**
    * Explicitly remove a participant (kicked by Host)
@@ -299,40 +305,37 @@ export class Room {
   /**
    * Host disconnect grace period auto-promotion logic.
    * Waits 5 seconds before promoting the next eligible participant.
-   *
-   * @param externalOnlineCheck - Optional callback from RoomManager that
-   *   authoritatively checks the global socket registry. When provided, the
-   *   timer will NOT promote anyone if this callback returns true (meaning the
-   *   host still has an active socket connection, e.g., via another tab).
-   *   This is the critical guard that prevents false promotions when only one
-   *   of the host's tabs closes while another remains open.
    */
   private startHostGracePeriod(externalOnlineCheck?: (() => boolean) | null) {
     if (this.hostGraceTimer) clearTimeout(this.hostGraceTimer);
 
-    // Store the latest external check so the timer closure always uses the
-    // most up-to-date callback (handles the case where startHostGracePeriod
-    // is called again before the timer fires, e.g., on rapid tab closes).
     if (externalOnlineCheck) {
       this.hostExternalOnlineCheck = externalOnlineCheck;
     }
 
     this.hostGraceTimer = setTimeout(() => {
       this.hostGraceTimer = null;
+
+      // Guard 1: Primary check - is hostUserId still online in memory?
       const host = this.participants.get(this.hostUserId);
+      if (host && host.isOnline) return;
 
-      // Primary check: local socketIds Set
-      if (host && host.isOnline) return; // host came back
-
-      // Secondary check: authoritative global registry (guards against Set desync)
-      // If the external check confirms the host still has a live socket somewhere,
-      // do NOT promote — the closing tab was not the last one.
+      // Guard 2: Secondary check - external callback confirms host still has an active socket
       if (this.hostExternalOnlineCheck && this.hostExternalOnlineCheck()) {
-        console.log(`[Room ${this.code}] Grace period: host '${this.hostUserId}' still has active sockets in registry — skipping promotion.`);
+        console.log(`[Room ${this.code}] Grace period: host '${this.hostUserId}' still has active socket in registry — cancelling promotion.`);
         this.hostExternalOnlineCheck = null;
         return;
       }
       this.hostExternalOnlineCheck = null;
+
+      // Guard 3: Tertiary check - is ANY participant with role 'Host' online in the room?
+      const anyOnlineHost = Array.from(this.participants.values()).find(
+        (p) => p.role === 'Host' && p.isOnline
+      );
+      if (anyOnlineHost) {
+        console.log(`[Room ${this.code}] Grace period: host participant is online — cancelling promotion.`);
+        return;
+      }
 
       // Find best candidate for host promotion:
       // 1. Longest-tenured online Moderator
