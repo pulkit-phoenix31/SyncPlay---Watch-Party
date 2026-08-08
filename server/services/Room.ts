@@ -139,19 +139,8 @@ export class Room {
    * @param userId              - The participant's persistent user ID
    * @param socketId            - The specific socket (browser tab) that disconnected
    * @param externalSocketCheck - Optional callback from RoomManager that cross-checks
-   *                              the authoritative socket registry (socketToRoomParticipant).
-   *                              Returns true if the userId still has other active sockets.
-   *                              Used as a second guard in case the in-memory Set gets out of sync  /**
-   * Mark a specific socket for a participant as disconnected.
-   * The participant only goes "offline" when ALL their sockets (tabs) are closed.
-   * Triggers host promotion grace period only when the host has zero remaining sockets.
-   *
-   * @param userId              - The participant's persistent user ID
-   * @param socketId            - The specific socket (browser tab) that disconnected
-   * @param externalSocketCheck - Optional callback from RoomManager that cross-checks
-   *                              the authoritative socket registry (socketToRoomParticipant).
-   *                              Returns true if the userId still has other active sockets.
-   *                              Used as a second guard in case the in-memory Set gets out of sync.
+   *                              the authoritative socket registry.
+   * @param getActiveSockets    - Returns all still-active socket IDs for this user in this room.
    */
   public handleParticipantDisconnect(
     userId: string,
@@ -165,23 +154,21 @@ export class Room {
     // Step 1: Remove the closing tab's socket from participant's local Set
     participant.removeSocket(socketId);
 
-    // Step 2: Query authoritative global registry for any active remaining sockets
+    // Step 2: Get authoritative list of remaining active sockets from global registry
     const activeSockets = getActiveSockets ? getActiveSockets() : [];
     const hasExternalSockets = activeSockets.length > 0 || (externalSocketCheck ? externalSocketCheck() : false);
 
-    // Step 3: Crucial fix for onlineCount & online status!
-    // If the global registry confirms active sockets still exist for this user (e.g. Tab B),
-    // ensure participant.socketIds contains those live sockets so participant.isOnline
-    // remains TRUE (size > 0), avoiding false "0 connected" / "Host Offline" UI status.
-    if (hasExternalSockets) {
-      if (activeSockets.length > 0) {
-        for (const sId of activeSockets) {
-          participant.addSocket(sId);
-        }
+    // Step 3: Authoritative socketIds rebuild.
+    // Clear the local Set and repopulate ONLY from the global registry.
+    // This prevents stale socket IDs from causing false isOnline=false readings.
+    if (hasExternalSockets && activeSockets.length > 0) {
+      participant.socketIds.clear();
+      for (const sId of activeSockets) {
+        participant.addSocket(sId);
       }
     }
 
-    const wasFullyOffline = !participant.isOnline && !hasExternalSockets;
+    const wasFullyOffline = !participant.isOnline;
 
     if (wasFullyOffline) {
       this.syncParticipantToDB(participant);

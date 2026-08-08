@@ -115,25 +115,34 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       const { room, participant } = ctx;
 
       // Step 1 — Remove this socket from the participant's local Set
-      const setNowEmpty = participant.removeSocket(socket.id);
+      participant.removeSocket(socket.id);
       // Step 2 — Remove from the authoritative global registry
       roomManager.unregisterSocket(socket.id);
       socket.leave(room.id);
 
-      // Step 3 — Two-layer "fully offline" check & active socket re-sync (mirrors handleDisconnect logic):
+      // Step 3 — Check global registry (AFTER unregister) for any remaining sockets
       const activeSockets = roomManager.getActiveSockets(room.id, participant.id);
       const hasRemainingSocket = activeSockets.length > 0;
 
+      // Step 4 — Re-sync remaining sockets into participant.socketIds so isOnline stays true
       if (hasRemainingSocket) {
+        // Clear stale set and rebuild from authoritative registry
+        participant.socketIds.clear();
         for (const sId of activeSockets) {
           participant.addSocket(sId);
         }
       }
 
-      const isFullyOffline = !participant.isOnline && !hasRemainingSocket;
+      const isFullyOffline = !participant.isOnline;
+
+      console.log(
+        `[Socket ${socket.id}] leave_room for '${participant.username}' —` +
+        ` remaining sockets: [${activeSockets.join(', ')}],` +
+        ` isOnline: ${participant.isOnline}, fullyOffline: ${isFullyOffline}`
+      );
 
       if (isFullyOffline) {
-        // All tabs closed voluntarily: fully remove participant from room
+        // All tabs closed: remove from room and notify everyone
         room.removeParticipant(participant.id);
         io.to(room.id).emit('user_left', {
           username: participant.username,
@@ -141,9 +150,8 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
           participants: room.getParticipantsList(),
         });
       } else {
-        // User still has another tab open (e.g. Tab B).
-        // Broadcast updated room state (including participants list) so all open tabs
-        // immediately reflect the correct online status and active participant count.
+        // Still has other tabs open — broadcast refreshed state so all clients
+        // immediately see correct isOnline=true and updated participant count.
         io.to(room.id).emit('sync_state', room.getPlaybackState());
       }
     } catch (err: any) {
@@ -462,12 +470,18 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
   socket.on('disconnect', () => {
     try {
       const result = roomManager.handleDisconnect(socket.id);
-      if (!result) return;
+
+      if (!result) {
+        // handleDisconnect returned null — this means leave_room already removed the
+        // socket mapping from the registry before the disconnect event fired.
+        // We don't need to emit anything here because leave_room already did it.
+        return;
+      }
 
       const { room, participant, wasFullyOffline } = result;
 
       console.log(
-        `[Socket ${socket.id}] Tab closed for '${participant.username}' in room '${room.code}'` +
+        `[Socket ${socket.id}] disconnect for '${participant.username}' in room '${room.code}'` +
         (wasFullyOffline ? ' — all tabs gone, user left' : ' — other tabs still open')
       );
 
@@ -480,8 +494,8 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
         });
       } else {
         // User still has another tab open (e.g. Tab B).
-        // Broadcast updated room state (including participants list) so all open tabs
-        // immediately reflect the correct online status and active participant count.
+        // Broadcast updated room state so all clients immediately see the correct
+        // isOnline=true and participant count.
         io.to(room.id).emit('sync_state', room.getPlaybackState());
       }
     } catch (err: any) {
