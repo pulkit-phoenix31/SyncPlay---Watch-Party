@@ -19,6 +19,12 @@ export class Room {
   private hostGraceTimer: NodeJS.Timeout | null = null;
   private emptyRoomTimer: NodeJS.Timeout | null = null;
   private rateLimitMap: Map<string, { count: number; resetTime: number }>;
+  /**
+   * Stored external online-check callback provided at the time the host grace
+   * period was started. Used inside the 5 s timer to authoritatively verify
+   * whether the host still has any live sockets before promoting a new host.
+   */
+  private hostExternalOnlineCheck: (() => boolean) | null = null;
 
   constructor(
     io: Server,
@@ -156,9 +162,10 @@ export class Room {
     if (wasFullyOffline) {
       this.syncParticipantToDB(participant);
 
-      // If host has no more sockets anywhere, start grace period for potential promotion
+      // If host has no more sockets anywhere, start grace period for potential promotion.
+      // Pass externalSocketCheck so the timer can re-verify before promoting.
       if (userId === this.hostUserId) {
-        this.startHostGracePeriod();
+        this.startHostGracePeriod(externalSocketCheck);
       }
 
       // Check if all participants are offline → schedule empty room cleanup
@@ -275,20 +282,46 @@ export class Room {
 
   /**
    * Host disconnect grace period auto-promotion logic.
-   * Waits 5 seconds before promoting next eligible participant.
+   * Waits 5 seconds before promoting the next eligible participant.
+   *
+   * @param externalOnlineCheck - Optional callback from RoomManager that
+   *   authoritatively checks the global socket registry. When provided, the
+   *   timer will NOT promote anyone if this callback returns true (meaning the
+   *   host still has an active socket connection, e.g., via another tab).
+   *   This is the critical guard that prevents false promotions when only one
+   *   of the host's tabs closes while another remains open.
    */
-  private startHostGracePeriod() {
+  private startHostGracePeriod(externalOnlineCheck?: (() => boolean) | null) {
     if (this.hostGraceTimer) clearTimeout(this.hostGraceTimer);
+
+    // Store the latest external check so the timer closure always uses the
+    // most up-to-date callback (handles the case where startHostGracePeriod
+    // is called again before the timer fires, e.g., on rapid tab closes).
+    if (externalOnlineCheck) {
+      this.hostExternalOnlineCheck = externalOnlineCheck;
+    }
 
     this.hostGraceTimer = setTimeout(() => {
       this.hostGraceTimer = null;
       const host = this.participants.get(this.hostUserId);
+
+      // Primary check: local socketIds Set
       if (host && host.isOnline) return; // host came back
+
+      // Secondary check: authoritative global registry (guards against Set desync)
+      // If the external check confirms the host still has a live socket somewhere,
+      // do NOT promote — the closing tab was not the last one.
+      if (this.hostExternalOnlineCheck && this.hostExternalOnlineCheck()) {
+        console.log(`[Room ${this.code}] Grace period: host '${this.hostUserId}' still has active sockets in registry — skipping promotion.`);
+        this.hostExternalOnlineCheck = null;
+        return;
+      }
+      this.hostExternalOnlineCheck = null;
 
       // Find best candidate for host promotion:
       // 1. Longest-tenured online Moderator
       // 2. Longest-tenured online Participant
-      // 3. Longest-tenured offline Moderator/Participant
+      // 3. Longest-tenured offline Moderator/Participant (graceful fallback)
       const candidates = Array.from(this.participants.values()).filter(
         (p) => p.id !== this.hostUserId
       );

@@ -159,6 +159,14 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
     currentUserIdRef.current = currentUser?.userId || null;
   }, [currentUser?.userId]);
 
+  // Keep a ref to roomId so the socket effect can read the latest value without
+  // including roomId in the dependency array (which would cause the effect to
+  // re-run and re-emit join_room every time roomId transitions from null → real ID).
+  const roomIdRef = useRef<string | null>(roomId);
+  useEffect(() => {
+    roomIdRef.current = roomId;
+  }, [roomId]);
+
   // Handle Socket Events & Connection lifecycle
   useEffect(() => {
     const socket = connectSocket();
@@ -315,7 +323,7 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
         ejectKickedUser();
         return;
       }
-      if (data.code === 'UNAUTHORIZED' && !roomId) {
+      if (data.code === 'UNAUTHORIZED' && !roomIdRef.current) {
         attemptJoin();
         return;
       }
@@ -356,7 +364,12 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
       socket.off('reaction', onReaction);
       socket.off('error', onError);
     };
-  }, [addToast, getOrCreateSession, initialRoomCode, roomCode, roomId]);
+    // NOTE: roomId is intentionally excluded from deps and accessed via roomIdRef.
+    // Including roomId would cause this effect to re-run (and re-emit join_room)
+    // every time roomId changes from null → the real ID, creating race conditions
+    // where the same tab re-registers its socket mapping mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addToast, getOrCreateSession, initialRoomCode, roomCode]);
 
   // Method to join room manually from Landing Page
   const joinRoom = useCallback((targetCode: string, username: string) => {
@@ -438,7 +451,13 @@ export function useWatchParty(initialRoomCode?: string, initialUsername?: string
         const res = await fetch(`/api/rooms/${activeRoomIdentifier}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (data && data.participants && Array.isArray(data.participants) && data.participants.length > 0) {
+
+        // Only update participants from REST when the socket is NOT connected.
+        // When the WebSocket is live, participants are kept up-to-date via real-time
+        // events (user_joined, user_left, role_assigned, host_transferred, sync_state).
+        // Applying a stale REST snapshot on top of that live state would temporarily
+        // show the host as offline right after they close one of their tabs.
+        if (connectionStatus !== 'connected' && data && data.participants && Array.isArray(data.participants) && data.participants.length > 0) {
           setParticipants(data.participants);
         }
 

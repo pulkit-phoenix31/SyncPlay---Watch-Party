@@ -222,6 +222,21 @@ export class RoomManager {
   }
 
   /**
+   * Authoritatively checks whether `userId` still has any active socket connections
+   * registered for `roomId` in the global socket-to-room-participant registry.
+   *
+   * This is the single source of truth used by both `handlers.ts` (leave_room) and
+   * `Room.ts` (startHostGracePeriod) to avoid relying solely on the per-participant
+   * in-memory socketIds Set, which can get out of sync under race conditions.
+   */
+  public hasActiveSocket(roomId: string, userId: string): boolean {
+    for (const m of this.socketToRoomParticipant.values()) {
+      if (m.roomId === roomId && m.userId === userId) return true;
+    }
+    return false;
+  }
+
+  /**
    * Find room and user by socket ID
    */
   public getBySocketId(socketId: string): { room: Room; userId: string } | null {

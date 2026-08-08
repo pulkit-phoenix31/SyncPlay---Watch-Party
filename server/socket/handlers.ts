@@ -114,12 +114,23 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
 
       const { room, participant } = ctx;
 
-      // Remove only this socket from the participant's set
-      const isNowFullyOffline = participant.removeSocket(socket.id);
+      // Step 1 — Remove this socket from the participant's local Set
+      const setNowEmpty = participant.removeSocket(socket.id);
+      // Step 2 — Remove from the authoritative global registry
       roomManager.unregisterSocket(socket.id);
       socket.leave(room.id);
 
-      if (isNowFullyOffline) {
+      // Step 3 — Two-layer "fully offline" check (mirrors handleDisconnect logic):
+      // Only treat the participant as gone when BOTH:
+      //   a) their local socketIds Set is empty, AND
+      //   b) the global socket registry has no remaining socket for this user in this room.
+      // This guards against the case where the local Set gets desynced (e.g., Tab B's
+      // socket was never added to the Set for some reason), so we never wrongly evict
+      // a host who still has another tab open.
+      const hasRemainingSocket = roomManager.hasActiveSocket(room.id, participant.id);
+      const isFullyOffline = setNowEmpty && !hasRemainingSocket;
+
+      if (isFullyOffline) {
         // All tabs closed voluntarily: fully remove participant from room
         room.removeParticipant(participant.id);
         io.to(room.id).emit('user_left', {
