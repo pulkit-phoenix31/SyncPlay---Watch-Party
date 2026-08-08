@@ -114,20 +114,26 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
 
       const { room, participant } = ctx;
 
-      // Voluntary leave: fully remove from room so the updated list doesn't include the leaver
-      room.removeParticipant(participant.id);
+      // Remove only this socket from the participant's set
+      const isNowFullyOffline = participant.removeSocket(socket.id);
       roomManager.unregisterSocket(socket.id);
       socket.leave(room.id);
 
-      io.to(room.id).emit('user_left', {
-        username: participant.username,
-        userId: participant.id,
-        participants: room.getParticipantsList(),
-      });
+      if (isNowFullyOffline) {
+        // All tabs closed voluntarily: fully remove participant from room
+        room.removeParticipant(participant.id);
+        io.to(room.id).emit('user_left', {
+          username: participant.username,
+          userId: participant.id,
+          participants: room.getParticipantsList(),
+        });
+      }
+      // else: user still has other tabs open — do nothing, they remain in the room
     } catch (err: any) {
       console.error('Error handling leave_room:', err);
     }
   });
+
 
   // ==========================================
   // 3. PLAY
@@ -313,14 +319,17 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       }
 
       const targetParticipant = room.participants.get(targetUserId);
-      if (targetParticipant && targetParticipant.socketId) {
-        const targetSocket = io.sockets.sockets.get(targetParticipant.socketId);
-        if (targetSocket) {
-          targetSocket.emit('error', {
-            message: 'You have been removed from the watch party by the Host.',
-            code: 'KICKED',
-          });
-          targetSocket.leave(room.id);
+      if (targetParticipant && targetParticipant.socketIds.size > 0) {
+        // Kick ALL open tabs of the target user
+        for (const sid of targetParticipant.socketIds) {
+          const targetSocket = io.sockets.sockets.get(sid);
+          if (targetSocket) {
+            targetSocket.emit('error', {
+              message: 'You have been removed from the watch party by the Host.',
+              code: 'KICKED',
+            });
+            targetSocket.leave(room.id);
+          }
         }
       }
 

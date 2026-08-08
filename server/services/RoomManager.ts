@@ -251,10 +251,10 @@ export class RoomManager {
     const participant = room.participants.get(userId);
     if (!participant) return null;
 
-    // Soft-disconnect: mark offline, preserve participant record.
-    // This allows the host grace period timer to fire if the Host disconnected,
-    // and prevents a spurious host-promotion when a duplicate tab closes.
-    room.handleParticipantDisconnect(userId);
+    // Per-socket disconnect: only marks the user offline when ALL their tabs
+    // (sockets) have closed. This prevents spurious host-promotions when the
+    // host closes one tab but still has another tab open with the same userId.
+    room.handleParticipantDisconnect(userId, socketId);
 
     return { room, participant };
   }

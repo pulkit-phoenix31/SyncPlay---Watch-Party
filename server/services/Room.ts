@@ -73,9 +73,9 @@ export class Room {
     let existing = this.participants.get(userId);
 
     if (existing) {
-      // Reconnection of existing user
-      existing.updateSocket(socketId, true);
-      // If host reconnected, cancel grace timer
+      // New tab / reconnection for same user — register the additional socket
+      existing.addSocket(socketId);
+      // If host reconnected (any tab), cancel the grace timer
       if (existing.id === this.hostUserId && this.hostGraceTimer) {
         clearTimeout(this.hostGraceTimer);
         this.hostGraceTimer = null;
@@ -98,11 +98,12 @@ export class Room {
 
     // Determine role:
     // - If the joining userId matches the room's stored hostUserId → Host (original host reconnecting)
-    // - If no participant records exist (brand new room) → Host
-    // - If the room is fully offline / abandoned (no one currently online) → Host
-    //   (soft-disconnect means participants.size never drops to 0 after first join, so we
-    //    use the "online" count as the signal for an abandoned room instead)
+    // - If the room has zero participant records at all (brand new room) → Host
     // - Otherwise → Participant (or requestedRole)
+    //
+    // NOTE: We deliberately do NOT grant Host when !hasHost but participants.size > 0.
+    // That case (all offline after DB restore) should be resolved by the host grace
+    // period timer, not by auto-promoting the first person who happens to connect.
     let assignedRole: Role = requestedRole || 'Participant';
 
     const isHostUser = Boolean(
@@ -110,30 +111,9 @@ export class Room {
       userId.trim().toLowerCase() === this.hostUserId.trim().toLowerCase()
     );
 
-    // "effectively empty" = everyone is offline (soft-disconnected)
-    const hasOnlineParticipant = Array.from(this.participants.values()).some((p) => p.isOnline);
-
-    if (isHostUser || this.participants.size === 0 || !hasOnlineParticipant) {
+    if (isHostUser || this.participants.size === 0) {
       assignedRole = 'Host';
-
-      // For abandoned-room takeover: demote stale Host records to Moderator so
-      // there is never more than one participant with the Host role.
-      if (!isHostUser && this.participants.size > 0) {
-        for (const p of this.participants.values()) {
-          if (p.role === 'Host') {
-            p.setRole('Moderator');
-            this.syncParticipantToDB(p);
-          }
-        }
-      }
-
       this.hostUserId = userId;
-
-      // Cancel any running grace timer — a new Host is now active
-      if (this.hostGraceTimer) {
-        clearTimeout(this.hostGraceTimer);
-        this.hostGraceTimer = null;
-      }
     }
 
     const newParticipant = new Participant(userId, finalUsername, assignedRole, socketId, true);
@@ -146,26 +126,35 @@ export class Room {
   }
 
   /**
-   * Mark participant as offline on disconnect.
-   * Triggers host promotion grace period if Host disconnects.
+   * Mark a specific socket for a participant as disconnected.
+   * The participant only goes "offline" when ALL their sockets (tabs) are closed.
+   * Triggers host promotion grace period only when the host has zero remaining sockets.
+   *
+   * @param userId - The participant's persistent user ID
+   * @param socketId - The specific socket (browser tab) that disconnected
    */
-  public handleParticipantDisconnect(userId: string): Participant | null {
+  public handleParticipantDisconnect(userId: string, socketId: string): Participant | null {
     const participant = this.participants.get(userId);
     if (!participant) return null;
 
-    participant.updateSocket(null, false);
-    this.syncParticipantToDB(participant);
+    const isNowFullyOffline = participant.removeSocket(socketId);
 
-    // If host disconnected, initiate grace period timer for auto-promotion
-    if (userId === this.hostUserId) {
-      this.startHostGracePeriod();
-    }
+    // Only trigger host grace period / empty room logic when ALL tabs are gone
+    if (isNowFullyOffline) {
+      this.syncParticipantToDB(participant);
 
-    // Check if all participants are offline
-    const onlineCount = this.getOnlineCount();
-    if (onlineCount === 0) {
-      this.startEmptyRoomTimeout();
+      // If host has no more sockets, start grace period for potential promotion
+      if (userId === this.hostUserId) {
+        this.startHostGracePeriod();
+      }
+
+      // Check if all participants are offline
+      const onlineCount = this.getOnlineCount();
+      if (onlineCount === 0) {
+        this.startEmptyRoomTimeout();
+      }
     }
+    // If the user still has other sockets open, no state change is needed
 
     return participant;
   }
