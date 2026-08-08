@@ -445,17 +445,29 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
   socket.on('disconnect', () => {
     try {
       const result = roomManager.handleDisconnect(socket.id);
-      if (result) {
-        const { room, participant } = result;
-        console.log(`[Socket ${socket.id}] User '${participant.username}' disconnected from room '${room.code}'`);
+      if (!result) return;
+
+      const { room, participant, wasFullyOffline } = result;
+
+      console.log(
+        `[Socket ${socket.id}] Tab closed for '${participant.username}' in room '${room.code}'` +
+        (wasFullyOffline ? ' — all tabs gone, user left' : ' — other tabs still open')
+      );
+
+      if (wasFullyOffline) {
+        // All of this user's tabs are closed → broadcast departure to the room
         io.to(room.id).emit('user_left', {
           username: participant.username,
           userId: participant.id,
           participants: room.getParticipantsList(),
         });
       }
+      // If wasFullyOffline is false: the user still has another tab open.
+      // Do NOT emit user_left — from everyone else's perspective the user
+      // is still present and online. The host role stays intact.
     } catch (err: any) {
       console.error('Error during disconnect cleanup:', err);
     }
   });
+
 }

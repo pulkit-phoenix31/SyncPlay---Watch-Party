@@ -130,34 +130,47 @@ export class Room {
    * The participant only goes "offline" when ALL their sockets (tabs) are closed.
    * Triggers host promotion grace period only when the host has zero remaining sockets.
    *
-   * @param userId - The participant's persistent user ID
-   * @param socketId - The specific socket (browser tab) that disconnected
+   * @param userId              - The participant's persistent user ID
+   * @param socketId            - The specific socket (browser tab) that disconnected
+   * @param externalSocketCheck - Optional callback from RoomManager that cross-checks
+   *                              the authoritative socket registry (socketToRoomParticipant).
+   *                              Returns true if the userId still has other active sockets.
+   *                              Used as a second guard in case the in-memory Set gets out of sync.
    */
-  public handleParticipantDisconnect(userId: string, socketId: string): Participant | null {
+  public handleParticipantDisconnect(
+    userId: string,
+    socketId: string,
+    externalSocketCheck?: () => boolean
+  ): { participant: Participant | null; wasFullyOffline: boolean } {
     const participant = this.participants.get(userId);
-    if (!participant) return null;
+    if (!participant) return { participant: null, wasFullyOffline: false };
 
-    const isNowFullyOffline = participant.removeSocket(socketId);
+    const setNowEmpty = participant.removeSocket(socketId);
 
-    // Only trigger host grace period / empty room logic when ALL tabs are gone
-    if (isNowFullyOffline) {
+    // A user is "fully offline" only if BOTH:
+    //   1. Their local socket Set is empty
+    //   2. The external registry (socketToRoomParticipant) confirms no other sockets
+    const hasExternalSockets = externalSocketCheck ? externalSocketCheck() : false;
+    const wasFullyOffline = setNowEmpty && !hasExternalSockets;
+
+    if (wasFullyOffline) {
       this.syncParticipantToDB(participant);
 
-      // If host has no more sockets, start grace period for potential promotion
+      // If host has no more sockets anywhere, start grace period for potential promotion
       if (userId === this.hostUserId) {
         this.startHostGracePeriod();
       }
 
-      // Check if all participants are offline
+      // Check if all participants are offline → schedule empty room cleanup
       const onlineCount = this.getOnlineCount();
       if (onlineCount === 0) {
         this.startEmptyRoomTimeout();
       }
     }
-    // If the user still has other sockets open, no state change is needed
 
-    return participant;
+    return { participant, wasFullyOffline };
   }
+
 
   /**
    * Explicitly remove a participant (kicked by Host)

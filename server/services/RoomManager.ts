@@ -235,29 +235,44 @@ export class RoomManager {
   }
 
   /**
-   * Handle socket disconnect — marks participant offline (soft) so the
-   * host grace period can run correctly.
-   * Hard removal only happens on voluntary leave_room events.
+   * Handle socket disconnect.
+   *
+   * Removes the specific socket from the participant's active socket set.
+   * Only marks the participant "fully offline" (and potentially starts the host
+   * grace period) when they have NO remaining sockets in either:
+   *   - the participant's own socketIds Set, AND
+   *   - the global socketToRoomParticipant registry (authoritative source)
+   *
+   * The global registry is checked AFTER unregisterSocket so the current
+   * socket is already removed — any hit means another tab is still active.
    */
-  public handleDisconnect(socketId: string): { room: Room; participant: Participant } | null {
+  public handleDisconnect(socketId: string): { room: Room; participant: Participant; wasFullyOffline: boolean } | null {
     const mapping = this.getBySocketId(socketId);
+    // Remove this socket from the registry FIRST — so the external check
+    // below only finds genuinely different, still-active sockets.
     this.unregisterSocket(socketId);
 
     if (!mapping) return null;
 
     const { room, userId } = mapping;
 
-    // Get a reference to the participant BEFORE marking them offline
     const participant = room.participants.get(userId);
     if (!participant) return null;
 
-    // Per-socket disconnect: only marks the user offline when ALL their tabs
-    // (sockets) have closed. This prevents spurious host-promotions when the
-    // host closes one tab but still has another tab open with the same userId.
-    room.handleParticipantDisconnect(userId, socketId);
+    // Cross-check: does this userId still have any other sockets registered
+    // for this room in the authoritative global socket map?
+    // This acts as a failsafe in case the participant's in-memory socketIds
+    // Set gets out of sync (e.g., race conditions, server-side restores).
+    const externalSocketCheck = (): boolean =>
+      Array.from(this.socketToRoomParticipant.values()).some(
+        (m) => m.roomId === room.id && m.userId === userId
+      );
 
-    return { room, participant };
+    const { wasFullyOffline } = room.handleParticipantDisconnect(userId, socketId, externalSocketCheck);
+
+    return { room, participant, wasFullyOffline };
   }
+
 
   /**
    * Restore active rooms from SQLite DB on server startup
