@@ -237,6 +237,20 @@ export class RoomManager {
   }
 
   /**
+   * Returns all active socket IDs registered for `userId` in `roomId`
+   * from the global socket-to-room-participant registry.
+   */
+  public getActiveSockets(roomId: string, userId: string): string[] {
+    const sockets: string[] = [];
+    for (const [sId, m] of this.socketToRoomParticipant.entries()) {
+      if (m.roomId === roomId && m.userId === userId) {
+        sockets.push(sId);
+      }
+    }
+    return sockets;
+  }
+
+  /**
    * Find room and user by socket ID
    */
   public getBySocketId(socketId: string): { room: Room; userId: string } | null {
@@ -274,16 +288,15 @@ export class RoomManager {
     const participant = room.participants.get(userId);
     if (!participant) return null;
 
-    // Cross-check: does this userId still have any other sockets registered
-    // for this room in the authoritative global socket map?
-    // This acts as a failsafe in case the participant's in-memory socketIds
-    // Set gets out of sync (e.g., race conditions, server-side restores).
-    const externalSocketCheck = (): boolean =>
-      Array.from(this.socketToRoomParticipant.values()).some(
-        (m) => m.roomId === room.id && m.userId === userId
-      );
+    const getActiveSockets = (): string[] => this.getActiveSockets(room.id, userId);
+    const externalSocketCheck = (): boolean => getActiveSockets().length > 0;
 
-    const { wasFullyOffline } = room.handleParticipantDisconnect(userId, socketId, externalSocketCheck);
+    const { wasFullyOffline } = room.handleParticipantDisconnect(
+      userId,
+      socketId,
+      externalSocketCheck,
+      getActiveSockets
+    );
 
     return { room, participant, wasFullyOffline };
   }

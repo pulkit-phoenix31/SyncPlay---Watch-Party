@@ -95,23 +95,31 @@ export const ParticipantList: React.FC<ParticipantListProps> = ({
                     </div>
 
                     {/* Role Label */}
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-tighter ${
-                        p.role === 'Host'
-                          ? 'text-[#FF5400]'
-                          : p.role === 'Moderator'
-                          ? 'text-purple-400'
-                          : 'text-gray-500'
-                      }`}
-                    >
-                      {p.role}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-[10px] font-bold uppercase tracking-tighter ${
+                          p.role === 'Host'
+                            ? 'text-[#FF5400]'
+                            : p.role === 'Moderator'
+                            ? 'text-purple-400'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        {p.role}
+                      </span>
+                      {!p.isOnline && (
+                        <span className="text-[9px] text-gray-500 font-normal tracking-normal">
+                          (Offline)
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Status or Host Context Menu */}
                 <div className="flex items-center gap-1">
                   <div
+                    title={p.isOnline ? 'Online' : 'Offline'}
                     className={`w-2 h-2 rounded-full ${
                       p.isOnline ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]' : 'bg-gray-600'
                     }`}

@@ -146,18 +146,34 @@ export class Room {
   public handleParticipantDisconnect(
     userId: string,
     socketId: string,
-    externalSocketCheck?: () => boolean
+    externalSocketCheck?: () => boolean,
+    getActiveSockets?: () => string[]
   ): { participant: Participant | null; wasFullyOffline: boolean } {
     const participant = this.participants.get(userId);
     if (!participant) return { participant: null, wasFullyOffline: false };
 
-    const setNowEmpty = participant.removeSocket(socketId);
+    // Step 1: Remove the closing tab's socket from participant's local Set
+    participant.removeSocket(socketId);
 
-    // A user is "fully offline" only if BOTH:
-    //   1. Their local socket Set is empty
-    //   2. The external registry (socketToRoomParticipant) confirms no other sockets
-    const hasExternalSockets = externalSocketCheck ? externalSocketCheck() : false;
-    const wasFullyOffline = setNowEmpty && !hasExternalSockets;
+    // Step 2: Query authoritative global registry for any active remaining sockets
+    const activeSockets = getActiveSockets ? getActiveSockets() : [];
+    const hasExternalSockets = externalSocketCheck
+      ? externalSocketCheck()
+      : activeSockets.length > 0;
+
+    // Step 3: Crucial fix for onlineCount & online status!
+    // If the global registry confirms active sockets still exist (e.g. Tab B),
+    // ensure participant.socketIds contains those live sockets so participant.isOnline
+    // remains TRUE (size > 0), avoiding false "0 connected" / "Host Offline" UI status.
+    if (hasExternalSockets) {
+      if (activeSockets.length > 0) {
+        for (const sId of activeSockets) {
+          participant.addSocket(sId);
+        }
+      }
+    }
+
+    const wasFullyOffline = !participant.isOnline && !hasExternalSockets;
 
     if (wasFullyOffline) {
       this.syncParticipantToDB(participant);

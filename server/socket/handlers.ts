@@ -120,15 +120,17 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
       roomManager.unregisterSocket(socket.id);
       socket.leave(room.id);
 
-      // Step 3 — Two-layer "fully offline" check (mirrors handleDisconnect logic):
-      // Only treat the participant as gone when BOTH:
-      //   a) their local socketIds Set is empty, AND
-      //   b) the global socket registry has no remaining socket for this user in this room.
-      // This guards against the case where the local Set gets desynced (e.g., Tab B's
-      // socket was never added to the Set for some reason), so we never wrongly evict
-      // a host who still has another tab open.
-      const hasRemainingSocket = roomManager.hasActiveSocket(room.id, participant.id);
-      const isFullyOffline = setNowEmpty && !hasRemainingSocket;
+      // Step 3 — Two-layer "fully offline" check & active socket re-sync (mirrors handleDisconnect logic):
+      const activeSockets = roomManager.getActiveSockets(room.id, participant.id);
+      const hasRemainingSocket = activeSockets.length > 0;
+
+      if (hasRemainingSocket) {
+        for (const sId of activeSockets) {
+          participant.addSocket(sId);
+        }
+      }
+
+      const isFullyOffline = !participant.isOnline && !hasRemainingSocket;
 
       if (isFullyOffline) {
         // All tabs closed voluntarily: fully remove participant from room
@@ -138,8 +140,12 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
           userId: participant.id,
           participants: room.getParticipantsList(),
         });
+      } else {
+        // User still has another tab open (e.g. Tab B).
+        // Broadcast updated room state (including participants list) so all open tabs
+        // immediately reflect the correct online status and active participant count.
+        io.to(room.id).emit('sync_state', room.getPlaybackState());
       }
-      // else: user still has other tabs open — do nothing, they remain in the room
     } catch (err: any) {
       console.error('Error handling leave_room:', err);
     }
@@ -472,10 +478,12 @@ export function registerSocketHandlers(io: Server, socket: Socket) {
           userId: participant.id,
           participants: room.getParticipantsList(),
         });
+      } else {
+        // User still has another tab open (e.g. Tab B).
+        // Broadcast updated room state (including participants list) so all open tabs
+        // immediately reflect the correct online status and active participant count.
+        io.to(room.id).emit('sync_state', room.getPlaybackState());
       }
-      // If wasFullyOffline is false: the user still has another tab open.
-      // Do NOT emit user_left — from everyone else's perspective the user
-      // is still present and online. The host role stays intact.
     } catch (err: any) {
       console.error('Error during disconnect cleanup:', err);
     }
