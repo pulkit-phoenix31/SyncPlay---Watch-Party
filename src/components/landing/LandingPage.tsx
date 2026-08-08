@@ -500,7 +500,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
       {/* Footer */}
       <footer className="w-full border-t border-[#272727] py-4 text-center text-xs text-[#AAAAAA]">
-        SyncPlays | Made By <span className="text-white">Pulkit</span> With 💗
+        <div>
+          SyncPlays | Made By <span className="text-white">Pulkit</span> With 💗
+        </div>
+        <div className="mt-1 text-[#666666]">
+          © 2026 SyncPlays. All rights reserved.
+        </div>
       </footer>
     </div>
   );
