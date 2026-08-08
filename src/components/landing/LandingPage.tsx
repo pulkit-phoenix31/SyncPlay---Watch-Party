@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { extractYouTubeId } from '../../utils/youtube.js';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect } from "react";
+import { extractYouTubeId } from "../../utils/youtube.js";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Play,
   Plus,
@@ -12,27 +12,34 @@ import {
   Zap,
   MessageCircle,
   Check,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface LandingPageProps {
   onJoinRoom: (code: string, username: string) => void;
   initialCode?: string;
 }
 
-const STORAGE_KEY = 'yt_watch_party_user_session';
+const STORAGE_KEY = "yt_watch_party_user_session";
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCode }) => {
-  const [tab, setTab] = useState<'create' | 'join'>(initialCode ? 'join' : 'create');
-  const [username, setUsername] = useState('');
-  const [joinCode, setJoinCode] = useState(initialCode || '');
-  const [customVideoUrl, setCustomVideoUrl] = useState('');
+export const LandingPage: React.FC<LandingPageProps> = ({
+  onJoinRoom,
+  initialCode,
+}) => {
+  const [tab, setTab] = useState<"create" | "join">(
+    initialCode ? "join" : "create",
+  );
+  const [username, setUsername] = useState("");
+  const [joinCode, setJoinCode] = useState(initialCode || "");
+  const [customVideoUrl, setCustomVideoUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [pastSessions, setPastSessions] = useState<{ code: string; name: string }[]>([]);
+  const [pastSessions, setPastSessions] = useState<
+    { code: string; name: string }[]
+  >([]);
 
   useEffect(() => {
     try {
-      const historyStr = localStorage.getItem('yt_watch_party_history');
+      const historyStr = localStorage.getItem("yt_watch_party_history");
       if (historyStr) {
         setPastSessions(JSON.parse(historyStr));
       }
@@ -47,7 +54,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
         { code, name: `Watch Party ${code}` },
         ...pastSessions.filter((s) => s.code !== code),
       ].slice(0, 5);
-      localStorage.setItem('yt_watch_party_history', JSON.stringify(newHistory));
+      localStorage.setItem(
+        "yt_watch_party_history",
+        JSON.stringify(newHistory),
+      );
     } catch (e) {
       // ignore
     }
@@ -58,13 +68,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
     try {
       res = await fetch(url, options);
     } catch (netErr) {
-      throw new Error('Network error. Please check your connection and try again.');
+      throw new Error(
+        "Network error. Please check your connection and try again.",
+      );
     }
 
-    const contentType = res.headers.get('content-type') || '';
+    const contentType = res.headers.get("content-type") || "";
     let data: any = null;
 
-    if (contentType.includes('application/json')) {
+    if (contentType.includes("application/json")) {
       try {
         data = await res.json();
       } catch (e) {
@@ -73,7 +85,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
     }
 
     if (!res.ok) {
-      const errorMsg = data?.error || (res.status === 404 ? 'Watch party room not found or closed.' : 'Server issue occurred. Please try again.');
+      const errorMsg =
+        data?.error ||
+        (res.status === 404
+          ? "Watch party room not found or closed."
+          : "Server issue occurred. Please try again.");
       throw new Error(errorMsg);
     }
 
@@ -83,11 +99,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
   const handleCreateParty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
-      setErrorMsg('Please enter your display name to start');
+      setErrorMsg("Please enter your display name to start");
       return;
     }
     if (!customVideoUrl.trim()) {
-      setErrorMsg('Please enter a YouTube video URL or Video ID');
+      setErrorMsg("Please enter a YouTube video URL or Video ID");
       return;
     }
 
@@ -95,7 +111,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
     setErrorMsg(null);
 
     try {
-      let clientUserId = '';
+      let clientUserId = "";
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
@@ -111,13 +127,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
       }
 
       const targetVideoId = extractYouTubeId(customVideoUrl.trim());
-      let roomCode = '';
+      let roomCode = "";
       let hostUserId = clientUserId;
 
       try {
-        const data = await fetchJsonSafely('/api/rooms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const data = await fetchJsonSafely("/api/rooms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             hostUsername: username.trim(),
             hostUserId: clientUserId,
@@ -130,13 +146,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
           if (data.hostUserId) hostUserId = data.hostUserId;
         }
       } catch (apiErr: any) {
-        console.warn('API room creation failed, falling back to instant room initialization:', apiErr);
+        console.warn(
+          "API room creation failed, falling back to instant room initialization:",
+          apiErr,
+        );
       }
 
       // If API route failed or returned empty/HTML, generate fallback code so watch party can still proceed
       if (!roomCode) {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        let code = 'SYNC-';
+        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        let code = "SYNC-";
         for (let i = 0; i < 4; i++) {
           code += chars.charAt(Math.floor(Math.random() * chars.length));
         }
@@ -148,7 +167,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
         username: username.trim(),
         roomId: roomCode,
         roomCode: roomCode,
-        role: 'Host',
+        role: "Host",
         videoId: targetVideoId,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
@@ -156,8 +175,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
       saveToHistory(roomCode);
       onJoinRoom(roomCode, username.trim());
     } catch (err: any) {
-      console.error('Error creating party:', err);
-      setErrorMsg(err.message || 'Something went wrong. Please try again.');
+      console.error("Error creating party:", err);
+      setErrorMsg(err.message || "Something went wrong. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -166,11 +185,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
   const handleJoinParty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
-      setErrorMsg('Please enter your name');
+      setErrorMsg("Please enter your name");
       return;
     }
     if (!joinCode.trim()) {
-      setErrorMsg('Please enter a Room Code or Link');
+      setErrorMsg("Please enter a Room Code or Link");
       return;
     }
 
@@ -181,18 +200,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
       let rawInput = joinCode.trim();
       let cleanCode = rawInput.toUpperCase();
 
-      if (rawInput.includes('room=')) {
-        cleanCode = rawInput.split('room=')[1].split('&')[0].toUpperCase();
-      } else if (rawInput.includes('ROOM=')) {
-        cleanCode = rawInput.split('ROOM=')[1].split('&')[0].toUpperCase();
-      } else if (rawInput.startsWith('http://') || rawInput.startsWith('https://')) {
+      if (rawInput.includes("room=")) {
+        cleanCode = rawInput.split("room=")[1].split("&")[0].toUpperCase();
+      } else if (rawInput.includes("ROOM=")) {
+        cleanCode = rawInput.split("ROOM=")[1].split("&")[0].toUpperCase();
+      } else if (
+        rawInput.startsWith("http://") ||
+        rawInput.startsWith("https://")
+      ) {
         try {
           const parsedUrl = new URL(rawInput);
-          const roomParam = parsedUrl.searchParams.get('room');
+          const roomParam = parsedUrl.searchParams.get("room");
           if (roomParam) {
             cleanCode = roomParam.trim().toUpperCase();
           } else {
-            const segments = parsedUrl.pathname.split('/').filter(Boolean);
+            const segments = parsedUrl.pathname.split("/").filter(Boolean);
             if (segments.length > 0) {
               cleanCode = segments[segments.length - 1].trim().toUpperCase();
             }
@@ -205,10 +227,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
       try {
         await fetchJsonSafely(`/api/rooms/${cleanCode}`);
       } catch (apiErr: any) {
-        console.warn('API room lookup check warning:', apiErr);
+        console.warn("API room lookup check warning:", apiErr);
       }
 
-      let clientUserId = '';
+      let clientUserId = "";
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
@@ -228,14 +250,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
         username: username.trim(),
         roomId: cleanCode,
         roomCode: cleanCode,
-        role: 'Participant',
+        role: "Participant",
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 
       saveToHistory(cleanCode);
       onJoinRoom(cleanCode, username.trim());
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to find room');
+      setErrorMsg(err.message || "Failed to find room");
     } finally {
       setIsSubmitting(false);
     }
@@ -281,7 +303,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
           </h1>
 
           <p className="text-sm sm:text-base text-[#AAAAAA] leading-relaxed max-w-lg">
-            Stream YouTube videos with friends in real-time. Frame-perfect playback control, host permissions, live chat, and instant reactions.
+            Stream YouTube videos with friends in real-time. Frame-perfect
+            playback control, host permissions, live chat, and instant
+            reactions.
           </p>
 
           {/* Stat Chips / Features */}
@@ -318,13 +342,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
           <div className="flex bg-[#0F0F0F] p-1 rounded-full border border-[#3F3F3F] mb-6">
             <button
               onClick={() => {
-                setTab('create');
+                setTab("create");
                 setErrorMsg(null);
               }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-full transition-colors cursor-pointer ${
-                tab === 'create'
-                  ? 'bg-[#FF0000] text-white'
-                  : 'text-[#AAAAAA] hover:text-white'
+                tab === "create"
+                  ? "bg-[#FF0000] text-white"
+                  : "text-[#AAAAAA] hover:text-white"
               }`}
             >
               <Plus className="w-3.5 h-3.5" />
@@ -333,13 +357,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
 
             <button
               onClick={() => {
-                setTab('join');
+                setTab("join");
                 setErrorMsg(null);
               }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-full transition-colors cursor-pointer ${
-                tab === 'join'
-                  ? 'bg-[#FF0000] text-white'
-                  : 'text-[#AAAAAA] hover:text-white'
+                tab === "join"
+                  ? "bg-[#FF0000] text-white"
+                  : "text-[#AAAAAA] hover:text-white"
               }`}
             >
               <LogIn className="w-3.5 h-3.5" />
@@ -352,7 +376,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
             {errorMsg && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
+                animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
                 className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-300"
               >
@@ -362,7 +386,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
           </AnimatePresence>
 
           {/* Form Content */}
-          {tab === 'create' ? (
+          {tab === "create" ? (
             <form onSubmit={handleCreateParty} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-[#AAAAAA] mb-1.5 uppercase tracking-wider">
@@ -452,7 +476,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
               {pastSessions.length > 0 && (
                 <div className="pt-3 border-t border-[#3F3F3F]">
                   <span className="text-[11px] font-medium text-[#AAAAAA] flex items-center gap-1 mb-2">
-                    <History className="w-3 h-3 text-[#FF0000]" /> Recent Watch Parties:
+                    <History className="w-3 h-3 text-[#FF0000]" /> Recent Watch
+                    Parties:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {pastSessions.map((s) => (
@@ -475,9 +500,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onJoinRoom, initialCod
 
       {/* Footer */}
       <footer className="w-full border-t border-[#272727] py-4 text-center text-xs text-[#AAAAAA]">
-        SyncPlay Watch Party App &bull; Real-time playback synchronization
+        SyncPlays | Made By <span className="text-white">Pulkit</span> With 💗
       </footer>
     </div>
   );
 };
-
