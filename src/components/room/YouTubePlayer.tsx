@@ -260,16 +260,22 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({
     const cleanVideoId = extractYouTubeId(playback.videoId);
     if (loadedVideoIdRef.current === cleanVideoId) return;
 
-    loadedVideoIdRef.current = cleanVideoId;
     setPlayerError(null);
     setIsAutoplayBlocked(false);
-    flagInternalStateChange(2000);
 
     try {
+      let success = false;
       if (playback.playState === 'playing' && typeof playerRef.current.loadVideoById === 'function') {
+        flagInternalStateChange(2000);
         playerRef.current.loadVideoById({ videoId: cleanVideoId, startSeconds: 0 });
+        success = true;
       } else if (typeof playerRef.current.cueVideoById === 'function') {
+        flagInternalStateChange(2000);
         playerRef.current.cueVideoById({ videoId: cleanVideoId, startSeconds: 0 });
+        success = true;
+      }
+      if (success) {
+        loadedVideoIdRef.current = cleanVideoId;
       }
     } catch (e) {
       console.warn('Error changing video on player instance:', e);

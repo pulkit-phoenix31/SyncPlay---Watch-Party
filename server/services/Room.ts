@@ -307,7 +307,25 @@ export class Room {
       const host = this.participants.get(this.hostUserId);
       if (host && host.isOnline) return;
 
-      // Guard 2: Secondary check - external callback confirms host still has an active socket
+      // Guard 2: Direct live registry check via RoomManager
+      try {
+        const { RoomManager } = require('./RoomManager.js');
+        const rm = RoomManager.getInstance();
+        if (rm && rm.hasActiveSocket(this.id, this.hostUserId)) {
+          console.log(`[Room ${this.code}] Grace period: host '${this.hostUserId}' still has active socket in registry — cancelling promotion.`);
+          if (host) {
+            const activeSockets = rm.getActiveSockets(this.id, this.hostUserId);
+            host.socketIds.clear();
+            for (const sId of activeSockets) host.addSocket(sId);
+          }
+          this.hostExternalOnlineCheck = null;
+          return;
+        }
+      } catch (e) {
+        // fallback to external check
+      }
+
+      // Guard 3: Secondary check - external callback confirms host still has an active socket
       if (this.hostExternalOnlineCheck && this.hostExternalOnlineCheck()) {
         console.log(`[Room ${this.code}] Grace period: host '${this.hostUserId}' still has active socket in registry — cancelling promotion.`);
         this.hostExternalOnlineCheck = null;
@@ -315,7 +333,7 @@ export class Room {
       }
       this.hostExternalOnlineCheck = null;
 
-      // Guard 3: Tertiary check - is ANY participant with role 'Host' online in the room?
+      // Guard 4: Tertiary check - is ANY participant with role 'Host' online in the room?
       const anyOnlineHost = Array.from(this.participants.values()).find(
         (p) => p.role === 'Host' && p.isOnline
       );
